@@ -33,7 +33,9 @@ ok(/\.panel-tabs \{[^}]*justify-content: center/.test(C), '标签组居中');
 ok(/\.panel-tab \{[^}]*flex: 0 0 auto/.test(C), '标签内容宽（蓝线 = 文字宽度）');
 
 console.log('== 4. Esc 清空搜索 ==');
-ok(A.indexOf('Esc 一律直接清空') > 0 && A.indexOf('noteSearch.layer -= 1') < 0, 'Esc 直接清空（不再逐层绕）');
+/* v4.2.17：Esc 清空由全局捕获层的 noteSearch 分支承担（旧的 #noteSearch keydown 已删） */
+ok(A.indexOf('noteSearch.layer -= 1') < 0 && /e\.target\.id === 'noteSearch'[\s\S]{0,120}noteSearchClear\(\)/.test(A),
+  'Esc 直接清空（不再逐层绕；全局捕获层统一处理）');
 
 console.log('== 5. 四项结果标签 ==');
 ok(/\[0, '全部', all\.length\]/.test(A) && /\[1, '资料内笔记'/.test(A) && /\[2, '全局笔记'/.test(A) && /\[3, 'Eagle 数据库'/.test(A),

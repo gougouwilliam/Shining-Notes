@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.2.16）
+# 功能自查对照表（v4.2.17）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -129,8 +129,8 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | ESC 逐级退出（v3.31 起只收浮层，不关插件） | `js/esc.js` `js/escguard.js` | 80 处 |
-| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 80 处 |
+| ✅ | ESC 逐级退出（v3.31 起只收浮层，不关插件） | `js/esc.js` `js/escguard.js` | 78 处 |
+| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 78 处 |
 | ✅ | ESC 真能关窗（IPC close→destroy） | `js/bridge.js` | 17 处 |
 | ✅ | 关不掉时常驻横幅 + 再试/最小化 | `js/app.js` `css/app.css` | 1 处 |
 | ✅ | ESC 无层可关时提示「退出请按 Ctrl+W」 | `js/app.js` | 4 处 |

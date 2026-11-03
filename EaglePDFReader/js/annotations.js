@@ -220,9 +220,9 @@ class AnnotationManager {
         node.style.width = Math.max(4, r.w * w) + 'px';
         node.style.height = Math.max(4, r.h * h) + 'px';
         node.style.setProperty('--area-color', c.solid);
-        if (ann.note) {
-          node.appendChild(U.el('div', { class: 'ann-tag', text: U.truncate(ann.note, 16) }));
-        }
+        /* v4.2.17：笔记内容不再画进阅读区（此前 ann.note 会内嵌 .ann-tag
+           显示前 16 个字）—— 阅读区只留框选标记本身，笔记内容走右栏卡片
+           和悬停提示（showTip）。 */
         hlLayer.appendChild(node);
       } else if (ann.type === 'note') {
         const p = ann.point || { x: 0.08, y: 0.08 };

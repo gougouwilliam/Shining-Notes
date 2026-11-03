@@ -104,22 +104,6 @@
 }
 .ann-area.active { box-shadow: 0 0 0 2px var(--accent-soft); }
 
-.ann-tag {
-  position: absolute;
-  top: -17px;
-  left: -1px;
-  height: 15px;
-  padding: 0 5px;
-  border-radius: 3px;
-  background: var(--area-color, #4a90e2);
-  color: #fff;
-  font-size: 9px;
-  line-height: 15px;
-  white-space: nowrap;
-  font-weight: 600;
-  letter-spacing: .2px;
-}
-
 /* ===================== 文字层（可选中） ===================== */
 .textLayer {
   position: absolute;

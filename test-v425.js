@@ -56,9 +56,10 @@ ok(H.indexOf('id="noteSearch"') > 0 && H.indexOf('btnNoteSearchClear') > 0, '搜
 ok(A.indexOf('noteSearchLayer1') > 0 && A.indexOf('noteSearchLayer2') > 0 && A.indexOf('noteSearchLayer3') > 0,
   '三层搜索函数（资料内 / 全局笔记 / Eagle 数据库）');
 ok(A.indexOf('NoteEditor.matchScore') > 0, '复用 [[ 补全同一套相关度打分');
-ok(A.indexOf('noteSearch.layer -= 1') < 0 && A.indexOf('Esc 一律直接清空') > 0, 'Esc 直接清空（v4.2.6 取消逐层绕）');
-ok(A.indexOf('e.stopPropagation()') > 0 && A.indexOf("e.key !== 'Escape' || !noteSearch.q.trim()") > 0,
-  'Esc 不漏进全局 Esc 栈、空查询交给全局');
+/* v4.2.17：noteSearch 自己的 keydown 收不到 Esc（全局捕获层 stopPropagation），
+   清空由全局 Escape 分支统一处理 —— 断言锚点换到全局层 */
+ok(A.indexOf('noteSearch.layer -= 1') < 0 && /e\.target\.id === 'noteSearch'[\s\S]{0,120}noteSearchClear\(\)/.test(A),
+  'Esc 直接清空（v4.2.6 取消逐层绕；v4.2.17 起由全局捕获层承担）');
 /* v4.2.15：自动选层下线 —— 永远停在「全部」，用户要求默认第一屏就是合流结果 */
 ok(/noteSearch\.layer = 0;/.test(A) && !/noteSearch\.layer = noteSearch\.res/.test(A),
   '搜索后固定停「全部」（v4.2.15 自动选层已删）');

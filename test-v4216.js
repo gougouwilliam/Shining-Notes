@@ -70,7 +70,7 @@ ok(/onAll\('#panelTabs \.panel-tab', 'click'[\s\S]{0,600}blur\(\)/.test(A),
 /* 5) 版本与文档 */
 ok(/^\s*"version": "\d+\.\d+\.\d+"/m.test(MFEST) && /^\s*"version": "\d+\.\d+\.\d+"/m.test(WFEST), '双 manifest 版本三段式');
 ok((MFEST.match(/"version":\s*"([^"]+)"/) || [])[1] === (WFEST.match(/"version":\s*"([^"]+)"/) || [])[1], '双 manifest 版本一致');
-ok(/当前版本 \*\*4\.2\.16\*\*/.test(README) && /## 更新记录 · 4\.2\.16/.test(README), 'README 版本行 + 4.2.16 记录');
+ok(/当前版本 \*\*\d+\.\d+\.\d+\*\*/.test(README) && /## 更新记录 · 4\.2\.16/.test(README), 'README 版本行（三段式）+ 4.2.16 记录');
 
 console.log('\n结果: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

@@ -440,7 +440,6 @@
     on('#btnNotesCopy', 'click', copyAllNotes);
     /* v4.2.5：笔记栏顶部搜索框 —— 本文献 → 全局笔记 → Eagle 库，Esc 逐层退 */
     on('#noteSearch', 'input', onNoteSearchInput);
-    on('#noteSearch', 'keydown', onNoteSearchKey);
     on('#noteSearch', 'keydown', noteSearchSwallowEnter);
     /* v4.2.6：空查询点搜索框 = 秀最近笔记；失焦没输东西就恢复列表 */
     on('#noteSearch', 'focus', () => {
@@ -4456,19 +4455,11 @@
     if (btn) btn.hidden = true;
   }
 
-  function onNoteSearchKey(e) {
-    /* v4.2.6：Esc 一律直接清空 —— 之前「逐层退」要按好几下才清得掉，用户嫌绕。
-       层与层之间用标签点选，Esc 只负责清空收摊。 */
-    if (e.key !== 'Escape' || !noteSearch.q.trim()) return;   // 空查询交给全局 Esc
-    e.preventDefault();
-    e.stopPropagation();                                      // 不让全局 Esc 栈把面板收了
-    noteSearchClear();
-    renderNotes();
-  }
-
   /* v4.2.13：笔记搜索框里的 Enter 也得有人认领 —— 之前放任不管，
      Eagle 把漏过去的 Enter 当成「用默认软件打开当前文档」。
-     搜索是边输边出的，Enter 没有本地职责，直接整键吞掉。 */
+     搜索是边输边出的，Enter 没有本地职责，直接整键吞掉。
+     （Esc 清空由全局捕获层的 noteSearch 分支处理，这里不再重复挂——
+     捕获层 stopPropagation 之后目标层的 keydown 根本收不到。） */
   function noteSearchSwallowEnter(e) {
     if (e.key !== 'Enter' || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.isComposing || e.keyCode === 229) return;
@@ -5751,6 +5742,13 @@
        已经在栈里就不重复压：每敲一个字都重压会把「搜索」顶到别的浮层之上。 */
     if (!Esc.has('search')) Esc.push('search', clearSearch);
   }
+
+  /* v4.2.17：窗口缩放时已打开的结果面板跟着重定位 —— fixed 坐标是算出来的
+     一次性快照，窗口变了就不对位了。面板隐藏时不动。 */
+  window.addEventListener('resize', () => {
+    const pane = $('#searchPane');
+    if (pane && !pane.hidden) showSearchPane();
+  });
 
   /* 退出搜索：收起结果面板 */
   function hideSearchPane() {
