@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>闪灵面板</title>
+<style>
+  html, body { height: 100%; }
+  body {
+    margin: 0; display: flex; align-items: center; justify-content: center;
+    background: #18191c; color: #cfd6e4;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    user-select: none;
+  }
+  .box { text-align: center; max-width: 420px; padding: 24px; }
+  .spin {
+    width: 34px; height: 34px; margin: 0 auto 18px;
+    border: 3px solid #2c2f36; border-top-color: #5aa2e8;
+    border-radius: 50%; animation: r 0.9s linear infinite;
+  }
+  @keyframes r { to { transform: rotate(360deg); } }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 8px; color: #e8edf6; }
+  p { font-size: 13px; line-height: 1.7; margin: 0 0 16px; color: #9aa3b5; }
+  .err { color: #e8a05a; }
+  button {
+    background: #2b6cb0; color: #fff; border: 0; border-radius: 6px;
+    padding: 7px 18px; font-size: 13px; cursor: pointer;
+  }
+  button:hover { background: #3581cd; }
+  .hidden { display: none; }
+  /* v3.20：窗口无原生边框，自己给一个关闭按钮 + 可拖动区域 */
+  body { -webkit-app-region: drag; }
+  button { -webkit-app-region: no-drag; }
+  .wclose {
+    position: fixed; top: 6px; right: 8px; width: 30px; height: 24px;
+    background: none; border: 0; border-radius: 5px; color: #9aa3b5;
+    font-size: 14px; line-height: 1; padding: 0; cursor: pointer;
+  }
+  .wclose:hover { background: #d94a4a; color: #fff; }
+  .diag {
+    margin-top: 14px; font-size: 11px; color: #5c6472;
+    text-align: left; word-break: break-all; line-height: 1.6;
+    background: #1e2024; border-radius: 6px; padding: 8px 10px;
+  }
+</style>
+</head>
+<body>
+  <button id="winClose" class="wclose" title="关闭">✕</button>
+  <div class="box">
+    <div class="spin" id="spin"></div>
+    <h1 id="title">正在启动闪灵面板…</h1>
+    <p id="msg">在找「闪灵笔记」主插件</p>
+    <button id="retry" class="hidden">重试</button>
+    <div id="diag" class="diag hidden"></div>
+  </div>
+  <script src="wb-launch.js"></script>
+  <script>
+    (function () {
+      var t = document.getElementById('title');
+      var m = document.getElementById('msg');
+      var spin = document.getElementById('spin');
+      var retry = document.getElementById('retry');
+      var diag = document.getElementById('diag');
+
+      function showDiag(r) {
+        try {
+          var lines = [];
+          if (r.href) lines.push('页面地址：' + r.href);
+          if (r.self) lines.push('插件目录：' + r.self);
+          if (r.roots && r.roots.length) lines.push('已扫描：' + r.roots.join(' ｜ '));
+          else lines.push('（还没拿到任何候选目录 —— Eagle 接口可能尚未就绪）');
+          diag.textContent = lines.join('\n');
+          diag.classList.remove('hidden');
+        } catch (e) { /* ignore */ }
+      }
+
+      function fail(status, r) {
+        spin.classList.add('hidden');
+        retry.classList.remove('hidden');
+        if (status === 'no-node') {
+          t.textContent = '需要在 Eagle 里打开';
+          m.textContent = '本插件是「闪灵笔记」的启动器，要在 Eagle 应用内运行才有意义。';
+        } else if (status === 'not-found' || status === 'no-dir' || status === 'bad-url') {
+          t.textContent = '没找到「闪灵笔记」';
+          m.textContent = '请先在 Eagle 里安装「闪灵笔记」主插件，再回到这里点「重试」。';
+        } else {
+          t.textContent = '启动失败';
+          m.textContent = '发生了未知问题（' + status + '），点「重试」再试一次。';
+        }
+        if (r) showDiag(r);
+      }
+
+      function go() {
+        spin.classList.remove('hidden');
+        retry.classList.add('hidden');
+        diag.classList.add('hidden');
+        t.textContent = '正在启动闪灵面板…';
+        m.textContent = '在找「闪灵笔记」主插件';
+        /* autoLaunch 自带重试（约 3.5s 窗口）：Eagle 的插件注册事件可能晚于页面就绪 */
+        WbLaunch.autoLaunch().then(function (r) {
+          if (r.status === 'ok') return;   /* 已经跳走 */
+          fail(r.status, r.diag);
+        });
+      }
+      /* 关窗（v3.34）：window.close() 在 Eagle 的插件窗口里会被拦掉 —— 点了没反应。
+         和主插件一样改走 @electron/remote / IPC 转发。
+         这里故意不加 destroy 兜底：这个页面下一秒通常就会 location.replace 到主插件，
+         销毁会把刚打开的那个窗口一起关掉。 */
+      function closeWin() {
+        try {
+          var r = require('@electron/remote');
+          var w = r && r.getCurrentWindow ? r.getCurrentWindow() : null;
+          if (w) { w.close(); return; }
+        } catch (e) { /* ignore */ }
+        try {
+          var ipc = require('electron').ipcRenderer;
+          if (ipc) { ipc.invoke('plugin.window.', { method: 'close', value: undefined }); return; }
+        } catch (e) { /* ignore */ }
+        try { window.close(); } catch (e) { /* ignore */ }
+      }
+      document.getElementById('winClose').addEventListener('click', function () {
+        closeWin();
+      });
+      retry.addEventListener('click', go);
+      go();
+    })();
+  </script>
+</body>
+</html>

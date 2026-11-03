@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>闪灵笔记</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/viewer.css">
+<!-- 提前把翻译接口的连接建好：首次翻译有 2 秒多花在 DNS + TLS 握手上 -->
+<link rel="preconnect" href="https://aidemo.youdao.com" crossorigin>
+<link rel="dns-prefetch" href="https://aidemo.youdao.com">
+</head>
+<body>
+
+<!-- ESC 的内联兜底（v3.28 加，v3.31 删）
+     ────────────────────────────────────────────────────────────
+     原来这里有一段独立脚本：记录 ESC 按下时间，900ms 后若 app.js 没认领这次
+     按键，就自己调 `plugin.window.` IPC 关窗，作为「ESC 彻底失灵」的保险。
+     实际效果和设计意图相反 —— 它成了第三个「ESC 会关窗口」的出口：
+       · 真全屏时第一下 ESC 被让给浏览器（app.js 提前 return，没认领）→ 900ms 后关窗；
+       · 输入法正在选词时同样提前 return → 900ms 后关窗；
+       · 另存为框弹不出来、用户想按 ESC 关掉那个框 → 先把插件窗关了，Eagle 界面跟着没了。
+     用户的原话是「越叠加越乱」。v3.31 起 ESC 不再关窗口（只往回收一层，
+     退出统一走 Ctrl+W），这个兜底也就没有存在的理由了，整段删除。 -->
+
+<!-- 无边框窗口的自绘标题栏（v3.20）：只在「闪灵面板」启动器打开的窗口里显示。
+     原生边框由 Windows 按系统主题上色（浅色系统 → 白条），插件改不了它的颜色，
+     所以启动器窗口用 frame:false 去掉原生边框，改由这里画一条深色条 + 三个按钮。 -->
+<div class="winbar" id="winBar" hidden>
+  <span class="winbar-title"><img src="logo.png" alt=""><span>闪灵笔记</span></span>
+  <div class="winbar-ctl">
+    <button type="button" id="winMin" title="最小化" aria-label="最小化">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.6 6h6.8"/></svg>
+    </button>
+    <button type="button" id="winMax" title="最大化" aria-label="最大化">
+      <svg viewBox="0 0 12 12" class="ico-max" aria-hidden="true"><rect x="2.4" y="2.4" width="7.2" height="7.2" rx="1"/></svg>
+      <svg viewBox="0 0 12 12" class="ico-rest" aria-hidden="true"><rect x="2.2" y="4" width="5.8" height="5.8" rx="1"/><path d="M4.4 4V3a1 1 0 0 1 1-1h3.4a1 1 0 0 1 1 1v3.4a1 1 0 0 1-1 1h-1"/></svg>
+    </button>
+    <button type="button" id="winClose" class="win-close" title="关闭" aria-label="关闭">
+      <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.8 2.8l6.4 6.4M9.2 2.8L2.8 9.2"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- 初始化异常时的可见诊断条：宁可显示错误，也不要留一张点不动的死页面 -->
+<div class="fatal-bar" id="fatalBar" hidden>
+  <span class="fb-icon">!</span>
+  <span class="fb-text"></span>
+  <button class="fb-close" id="btnFatalClose" title="关闭">✕</button>
+</div>
+
+<script>
+  /* 尽早把 frameless 开关打上：等 app.js boot 再打，会让首帧内容顶到最上面、然后往下跳 34px */
+  (function () {
+    try {
+      if (/(?:\?|&)launcher=1(?:&|#|$)/.test(location.search)) {
+        document.body.classList.add('frameless');
+        document.getElementById('winBar').hidden = false;
+      }
+    } catch (e) { /* ignore */ }
+  })();
+</script>
+
+<div class="app" id="app">
+
+  <!-- ==================== 左侧：摘录 / 笔记 / 知识库 + 回收站 ==================== -->
+  <aside class="panel" id="panel">
+    <div class="panel-head">
+      <div class="panel-tabs" id="panelTabs">
+        <button class="panel-tab active" data-tab="excerpts">摘录 <span class="badge" id="excerptCount">0</span></button>
+        <button class="panel-tab" data-tab="notes">笔记 <span class="badge" id="notesCount">0</span></button>
+        <button class="panel-tab" data-tab="kb">知识库</button>
+      </div>
+      <button class="icon-btn" id="btnTrash" title="回收站（删除的内容保留 30 天）">♻</button>
+    </div>
+
+    <!-- 本地增强：本地模型是可选项。翻译没有它也能用（走在线通道），
+         但 OCR 必须要有本地视觉模型。缺什么就在这一条里说清楚，别让人对着红色报错猜。 -->
+    <div class="env-bar" id="envBar" hidden>
+      <div class="env-top">
+        <span class="env-dot" id="envDot"></span>
+        <span class="env-sum" id="envSum">本地增强未启用</span>
+        <span class="env-detail" id="envDetail"></span>
+        <span class="spacer"></span>
+        <button class="link-btn" id="btnEnvToggle">设置</button>
+      </div>
+      <div class="env-body" id="envBody" hidden>
+        <div class="env-vram" id="envVram" hidden>
+          <span class="env-vt" id="envVramSum"></span>
+          <span class="spacer"></span>
+          <button class="ghost-btn xs" id="btnEnvUnload" title="立刻把模型请出显存，不用等闲置超时">释放显存</button>
+        </div>
+        <p class="env-lead" id="envLead"></p>
+        <ol class="env-steps" id="envSteps">
+          <li data-step="serve">
+            <span class="env-si">1</span>
+            <span class="env-sc">
+              <b>安装 Ollama</b>
+              <span class="env-sd">免费的本地模型运行时，装完在后台常驻</span>
+            </span>
+            <button class="ghost-btn xs" id="btnEnvDownload">下载</button>
+          </li>
+          <li data-step="model">
+            <span class="env-si">2</span>
+            <span class="env-sc">
+              <b>拉取视觉模型</b>
+              <span class="env-sd"><code id="envPullCmd">ollama pull qwen2.5vl:7b</code> · 约 6 GB</span>
+            </span>
+            <button class="ghost-btn xs" id="btnEnvCopyPull">复制</button>
+          </li>
+          <li data-step="check">
+            <span class="env-si">3</span>
+            <span class="env-sc">
+              <b>回来重新检测</b>
+              <span class="env-sd">装好不用重启插件</span>
+            </span>
+            <button class="primary-btn sm" id="btnEnvRedetect">检测</button>
+          </li>
+        </ol>
+        <p class="env-foot">翻译不装也能用（自动走在线通道）；<b>OCR 与离线翻译</b>需要上面两步。
+          模型只在本机跑，图片和文字都不会出网。
+          <button class="link-btn" id="btnOnboardOpen" title="打开环境检查清单：一次看清还缺什么、缺的怎么装">环境检查</button></p>
+        <div class="env-find" id="envFindRow" hidden>
+          <button class="ghost-btn xs" id="btnEnvFind">自动查找</button>
+          <span class="env-find-tip">让我在本机找一遍 ollama.exe（绿色版、装在别的盘也能找到）</span>
+        </div>
+        <div class="env-exe" id="envExeRow" hidden>
+          <input class="text-input sm" id="envExePath" placeholder="…或直接填 ollama.exe 完整路径">
+          <button class="ghost-btn xs" id="btnEnvExeSave">用它启动</button>
+        </div>
+      </div>
+    </div>
+
+    <section class="panel-body" data-panel="excerpts">
+      <div class="filter-row">
+        <div class="chips" id="excerptFilters">
+          <button class="chip active" data-filter="all">全部</button>
+          <button class="chip" data-filter="highlight">摘录</button>
+          <button class="chip" data-filter="area">框选</button>
+          <button class="chip" data-filter="note">锚点</button>
+        </div>
+      </div>
+      <!-- 批量操作条：按住 Ctrl 点卡片多选（Shift 连选、Ctrl+A 全选）后才出现 -->
+      <div class="ms-bar" id="excerptBulk" hidden></div>
+      <div class="excerpt-list" id="excerptList"></div>
+    </section>
+
+    <section class="panel-body" data-panel="notes" hidden>
+      <!-- v4.2.5：笔记搜索框。分层搜索：资料内 → 全局笔记 → Eagle 数据库，
+           v4.2.7 起 Esc 一律清空；默认停在「全部」（v4.2.15）。搜索时下面整个列表变成结果页。 -->
+      <div class="note-search-row">
+        <input class="text-input sm" id="noteSearch" autocomplete="off" spellcheck="false"
+               placeholder="⌕ 搜笔记 · 默认全部（资料内 / 全局 / Eagle 数据库）">
+        <button class="icon-btn" id="btnNoteSearchClear" title="清空搜索" hidden>✕</button>
+      </div>
+      <!-- v3.27：上下颠倒 —— 已经建好的笔记在上（读的时候先看到内容），
+           新建 / 编辑区挪到底部（写完就发出去，不用先往下滚过一列表）。 -->
+      <div class="notes-head">
+        <span>本 PDF 的笔记</span>
+        <span class="spacer"></span>
+        <button class="link-btn" id="btnNotesExport" title="导出 Markdown 到 PDF 同目录">导出</button>
+        <button class="link-btn" id="btnNotesCopy">复制</button>
+      </div>
+      <div class="ms-bar" id="notesBulk" hidden></div>
+      <div class="notes-list" id="notesList"></div>
+
+      <!-- v4.2.4：底部的小编辑区退役 —— 新建笔记统一弹居中大窗（空间大、
+           [[ 引用搜索窗弹在旁边）。点这里 = 打开那个大窗。 -->
+      <button class="note-new-bar" id="btnNoteNew" title="打开大笔记窗（支持 [[ 引用 / 拼音搜索）">✎ 新建笔记</button>
+    </section>
+
+    <section class="panel-body kb-panel" data-panel="kb" hidden>
+      <div class="kb-summary" id="kbSummary"></div>
+      <button class="primary-btn wide" id="btnOpenKb">打开知识库</button>
+      <p class="kb-tip">知识库汇总本插件记录的全部摘要、笔记与每日笔记（跨文档），以卡片方式浏览、溯源与清理。</p>
+      <div class="kb-recent" id="kbRecent"></div>
+    </section>
+  </aside>
+
+  <!-- ==================== 右侧：阅读区 ==================== -->
+  <!-- v4.1：左侧栏整个移除。原左栏的四块内容去向：
+         · 目录 / 缩略图 → 顶栏左侧两个按键的弹出面板（#outlinePop / #thumbsPop）
+         · 搜索结果     → 锚在搜索框下方的弹出面板（#searchPane）
+         · 实时字幕     → 顶栏「字幕」键的弹出面板（#subPane，视频模式）
+         · 阅读历史     → 移除；工作台「最近阅读」仍是同一个数据的入口 -->
+  <main class="main">
+    <header class="topbar">
+      <!-- v4.1：目录 / 缩略图 / 字幕 —— 弹出面板的入口键。视频模式下前两个隐藏 -->
+      <div class="tb seg nav-popups" id="navPopups">
+        <button class="tool-btn" id="btnPopOutline" title="文档目录">目录</button>
+        <button class="tool-btn" id="btnPopThumbs" title="页面缩略图">缩略图</button>
+        <button class="tool-btn" id="btnPopSubs" title="实时字幕" hidden>字幕</button>
+      </div>
+
+      <!-- 3.1 左侧只留页码翻页，不再显示文档标题；视频模式下整组隐藏 -->
+      <div class="tb seg" id="pageGroup">
+        <button class="icon-btn" id="btnPrev" title="上一页 (←)">‹</button>
+        <input class="page-input" id="pageInput" type="text" value="1" title="输入页码后回车跳转">
+        <span class="page-total" id="pageTotal">/ 0</span>
+        <button class="icon-btn" id="btnNext" title="下一页 (→)">›</button>
+      </div>
+
+      <div class="tb seg" id="zoomGroup">
+        <button class="icon-btn" id="btnZoomOut" title="缩小 (-)">−</button>
+        <button class="zoom-label" id="zoomLabel" title="点击恢复 100%">100%</button>
+        <button class="icon-btn" id="btnZoomIn" title="放大 (+)">+</button>
+        <button class="icon-btn wide tb-fit" id="btnFit" title="自动适配：宽度 / 页面 (0)">适宽</button>
+      </div>
+
+      <!-- 色板：只决定下一笔高亮的颜色 -->
+      <div class="tb seg swatch-bar" id="swatchBar"></div>
+
+      <!-- 3.3.3：摘录 / 摘录并笔记 / 框选 / 锚点 —— 四个各自独立的按键，不再两两分组 -->
+      <div class="tb act-group" id="toolGroup">
+        <button class="tb solo act" id="btnTopExcerpt" title="把选中的文字 / 图片存为摘录（不写笔记）">摘录</button>
+        <button class="tb solo act" id="btnTopExcerptNote" title="摘录并打开笔记编辑框">摘录并笔记</button>
+        <button class="tb solo act tool-btn" id="btnToolArea" data-tool="area" title="框选区域摘录 (A)">框选</button>
+        <button class="tb solo act tool-btn" id="btnToolNote" data-tool="note" title="在页面放置笔记锚点 (N)">锚点</button>
+      </div>
+
+      <!-- 搜索：v3.3 起直接是输入框，不用先点一下再弹 -->
+      <div class="tb search-field" id="searchBox">
+        <span class="sf-icon">⌕</span>
+        <input id="searchInput" class="sf-input" type="search" placeholder="搜索全文…" autocomplete="off" spellcheck="false">
+        <span class="sf-count" id="searchCount"></span>
+        <button class="sf-btn" id="btnSearchPrev" title="上一个 (Shift+Enter)" hidden>‹</button>
+        <button class="sf-btn" id="btnSearchNext" title="下一个 (Enter)" hidden>›</button>
+        <button class="sf-btn" id="btnSearchClear" title="清除 (Esc)" hidden>✕</button>
+      </div>
+
+      <span class="tb-spacer"></span>
+
+      <!-- 工作台 / 主题：各自独立成键 -->
+      <button class="tb solo" id="btnWorkbench" title="工作台：资料库统计、最近阅读与每日笔记">工作台</button>
+      <button class="tb solo" id="btnAiSummary" title="AI 总结全文：弹窗里可追问，选中任意文字可存为笔记">AI 总结</button>
+      <button class="tb solo solo-icon" id="btnTheme" title="切换明暗配色">◐</button>
+      <!-- v3.30：右端的 ✕ 删掉了。
+           它当时是「ESC 失灵时的退路」，可它自己也只是调 exitPlugin()，
+           ESC 关不掉的时候它照样关不掉 —— 于是变成一个看着像关闭、按了没反应的键。
+           现在关窗走 ESC / Ctrl+W / 系统标题栏，顶栏不再放这个假的出口。 -->
+    </header>
+
+    <!-- ==================== v4.1：弹出面板（原左栏内容） ====================
+         定位锚在 .main（顶栏下方左侧）；#searchPane 的 left 由 JS 按搜索框位置动态写入。 -->
+
+    <!-- 目录 -->
+    <div class="side-pop pop-outline" id="outlinePop" hidden>
+      <div class="sp-title">目录<span class="spacer"></span><button class="icon-btn tiny" data-spclose="outline" title="关闭">✕</button></div>
+      <div class="sp-body" id="outlinePane">
+        <div class="outline" id="outlineList"></div>
+      </div>
+    </div>
+
+    <!-- 缩略图 -->
+    <div class="side-pop pop-thumbs" id="thumbsPop" hidden>
+      <div class="sp-title">缩略图<span class="spacer"></span><button class="icon-btn tiny" data-spclose="thumbs" title="关闭">✕</button></div>
+      <div class="sp-body" id="thumbPane">
+        <div class="thumb-list" id="thumbList"></div>
+      </div>
+    </div>
+
+    <!-- 搜索结果（锚在搜索框下方） -->
+    <div class="side-pop pop-search" id="searchPane" hidden>
+      <div class="lsp-head">
+        <span class="lsp-title" id="searchPaneTitle">搜索结果</span>
+        <span class="spacer"></span>
+        <button class="link-btn" id="btnSearchPaneClose" title="退出搜索，回到阅读">退出</button>
+      </div>
+      <div class="lsp-list" id="searchList"></div>
+    </div>
+
+    <!-- 实时字幕（视频模式） -->
+    <div class="side-pop pop-subs" id="subPane" hidden>
+      <div class="sp-title"><span class="sub-dot" id="subDot"></span><span id="subName">实时字幕</span><span class="spacer"></span><button class="icon-btn tiny" data-spclose="subs" title="关闭">✕</button></div>
+      <div class="sub-tools">
+        <span class="sub-lang" id="subLang" hidden></span>
+        <!-- v3.30：专业领域。视频转字幕的「热词偏置」和「语境校对」都用它，
+             空着=通用。医学/生命科学这两份词表内置在 js/domainterms.js 里，
+             不需要用户自己一条条敲术语。 -->
+        <select class="sub-domain" id="subDomain" title="专业领域：影响识别热词与语境校对用的术语表">
+          <option value="general">通用</option>
+          <option value="medical">医学</option>
+          <option value="life">生命科学</option>
+          <option value="medical+life">医学 + 生命科学</option>
+        </select>
+        <button class="link-btn sub-fix" id="btnSubFix" title="精修：每句落定后用非流式模型重听一遍，更准、自带标点">精修</button>
+        <button class="link-btn sub-fix" id="btnSubCtx" title="语境校对：结合前后几句与术语表，改掉听错的音近字（需要本地模型）">语境</button>
+        <button class="link-btn sub-save" id="btnSubSave" hidden title="按住 Ctrl 点字幕可多选，Shift 连选，Ctrl+A 全选">存为笔记</button>
+        <button class="link-btn" id="btnSubToggle" title="开始 / 暂停转写；手动关掉后下一个视频不再自动开启">开启</button>
+      </div>
+
+      <div class="sub-list" id="subList" hidden></div>
+      <button class="sub-jump" id="subJump" hidden title="回到最新一句，并继续自动跟随">↓ 回到最新</button>
+
+      <div class="sub-guide" id="subGuide" hidden>
+        <p class="sg-title" id="sgTitle">开启实时字幕</p>
+        <p class="sg-desc" id="sgDesc"></p>
+        <div class="sg-bar" id="sgBar" hidden><i id="sgBarFill"></i></div>
+        <p class="sg-stat" id="sgStat"></p>
+        <label class="sg-check" id="sgFixRow"><input type="checkbox" id="sgFix" checked><span>同时下载精修模型（约 239 MB）· 重听一遍，中文更准、自带标点</span></label>
+        <button class="primary-btn sm" id="btnSubGo">下载并开启</button>
+      </div>
+
+      <div class="sub-foot">
+        <span class="sub-stat" id="subStat">未开启</span>
+        <span class="spacer"></span>
+        <button class="link-btn" id="btnSubExport" title="把字幕（Markdown，带时间戳）和这段音频一起导出到资料库 _notes">导出</button>
+      </div>
+    </div>
+
+    <div class="stage" id="stage">
+      <!-- tabindex="-1"：PDF 阅读区也要能把焦点抓进来 —— 否则 ←/→ 会被 Eagle 当成
+           「上一张/下一张素材」，翻页轮不到插件处理 -->
+      <div class="viewport" id="viewport" tabindex="-1">
+        <div class="pages" id="pages"></div>
+      </div>
+
+      <!-- v3.3：视频阅读区（与 PDF 阅读区互斥显示） -->
+      <!-- tabindex="-1"：打开视频时把焦点抓进来，否则空格会被 Eagle 当成「关闭预览」 -->
+      <div class="video-stage" id="videoStage" tabindex="-1" hidden>
+        <div class="vs-inner" id="vsInner">
+          <div class="vs-frame" id="vsFrame">
+            <video id="videoEl" playsinline preload="metadata"></video>
+            <!-- 片段计时：按第一次开始从 00:00 计时，随时知道截了多长 -->
+            <div class="vs-clip-timer" id="vsClipTimer" hidden>
+              <span class="vct-dot"></span>
+              <span class="vct-main" id="vsClipElapsed">00:00</span>
+              <span class="vct-sub" id="vsClipRange">A 00:00</span>
+            </div>
+            <!-- v3.27：片段「按原分辨率导出」的进度条（实时录制，按原速走） -->
+            <div class="vs-exp" id="vsExpHud" hidden>
+              <span class="vs-exp-dot"></span>
+              <span class="vs-exp-text" id="vsExpText">正在按原分辨率导出…</span>
+              <span class="vs-exp-bar"><i id="vsExpFill"></i></span>
+              <button class="vs-exp-cancel" id="btnVsExpCancel" title="取消导出（Esc）">取消</button>
+            </div>
+            <!-- 框选：在画面上拖出一个矩形，截取该区域（不写笔记 / 写笔记两种） -->
+            <div class="vs-sel-layer" id="vsSelLayer" hidden>
+              <div class="vs-sel-box" id="vsSelBox" hidden></div>
+              <p class="vs-sel-hint" id="vsSelHint">拖拽框选要截取的区域，Esc 取消</p>
+            </div>
+          </div>
+
+          <!-- 时间轴：已记录的截图 / 框选 / 片段按颜色排在轴上，可拖动定位 -->
+          <div class="vs-track" id="vsTrack" title="拖动定位；轴上色块是已记录的截图/框选/片段">
+            <div class="vst-clip" id="vstClip" hidden></div>
+            <div class="vst-fill" id="vstFill"></div>
+            <div class="vst-marks" id="vstMarks"></div>
+            <div class="vst-head" id="vstHead"></div>
+          </div>
+
+          <div class="vs-bar">
+            <!-- v3.30：原生 controls 去掉了。
+                 原因不是审美：浏览器原生控制条是一层盖在画面**底部**的深色渐变，
+                 它恰好挡住视频文件自带的底部白边 —— 鼠标一离开画面、控制条淡出，
+                 那条白带就露出来（用户看到的「鼠标移开就出现白带」）。
+                 换成这三个键之后画面永远干净，白边由画面裁剪解决。 -->
+            <div class="vs-ctrl" id="vsCtrl">
+              <button class="vs-cbtn" id="btnVsPlay" title="播放 / 暂停（空格）">▶</button>
+              <button class="vs-cbtn" id="btnVsMute" title="静音 / 取消静音">🔊</button>
+              <button class="vs-cbtn" id="btnVsFull" title="全屏（Esc 退出全屏）">⛶</button>
+            </div>
+            <span class="vs-name" id="vsName">视频</span>
+            <span class="vs-time" id="vsTime">00:00 / 00:00</span>
+            <span class="spacer"></span>
+            <div class="vs-acts" id="vsActs">
+              <!-- 标记颜色：视频下同样能选，决定下一笔截图/框选/片段的颜色（紧挨截图键，随手可换） -->
+              <div class="chips vs-swatches" id="vsSwatches" title="标记颜色：决定下一笔截图 / 框选 / 片段的颜色"></div>
+              <button class="ghost-btn xs" id="btnVsShot" title="截取当前画面，不写笔记">截图</button>
+              <button class="ghost-btn xs" id="btnVsShotNote" title="截取当前画面并写笔记">截图并笔记</button>
+              <button class="ghost-btn xs" id="btnVsArea" title="在画面上框选一块区域截成图片">框选</button>
+              <button class="ghost-btn xs" id="btnVsAreaNote" title="框选一块区域并写笔记">框选并笔记</button>
+              <button class="ghost-btn xs" id="btnVsClip" title="按一次取起点 A，播到终点再按一次">节选片段</button>
+              <button class="ghost-btn xs" id="btnVsClipNote" title="节选 A→B 片段并写笔记">节选片段并笔记</button>
+            </div>
+            <select class="vs-rate" id="vsRate" title="播放速度">
+              <option value="0.75">0.75×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.25">1.25×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+            </select>
+          </div>
+          <p class="vs-tip" id="vsTip">空格 播放/暂停 · ← → 前后 5 秒 · 拖时间轴定位 · 点色块选中后按 Delete 可删</p>
+        </div>
+      </div>
+
+      <div class="empty-state" id="emptyState">
+        <div class="empty-card">
+          <div class="empty-icon">▤</div>
+          <h1>闪灵笔记</h1>
+          <p>在 Eagle 里选中一个 PDF，按 <b>空格</b> 即可用本插件阅读；也可以从插件菜单进入后选择资料库里的文件。</p>
+          <div class="empty-actions">
+            <button class="primary-btn" id="btnEmptyLibrary">打开工作台</button>
+            <button class="ghost-btn sm" id="btnEmptyRetry" hidden>重试载入</button>
+          </div>
+          <p class="empty-msg" id="emptyMsg" hidden></p>
+          <ul class="empty-tips">
+            <li><b>文件来源</b>：先把 PDF 导入 Eagle（可分类或留在未分类），再阅读与摘录</li>
+            <li><b>摘录</b>：拖选文字或点选图片 → 摘录，右侧即时出现卡片</li>
+            <li><b>笔记</b>：Markdown 实时预览，自动写入 Eagle 条目的注释</li>
+            <li><b>退出</b>：按 <b>Esc</b> 回到 Eagle 资料库</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="drop-hint" id="dropHint" hidden>松开鼠标即可打开 PDF</div>
+
+      <div class="loading-mask" id="loadingMask" hidden>
+        <div class="spinner"></div>
+        <div class="loading-text" id="loadingText">正在打开…</div>
+      </div>
+    </div>
+  </main>
+
+
+</div>
+
+<!-- 文字 / 图片选中浮动工具条：文字有色板+翻译，图片没有 -->
+<div class="sel-toolbar" id="selToolbar" hidden>
+  <div class="swatches" id="swatches"></div>
+  <button class="sel-btn primary" data-act="excerpt" title="按当前颜色高亮并记为摘录">摘录</button>
+  <button class="sel-btn" data-act="excerptNote" title="摘录并立刻写笔记">摘录并笔记</button>
+  <button class="sel-btn" data-act="translate" title="划词翻译，可把译文存进笔记">翻译</button>
+  <button class="sel-btn" data-act="copy" title="复制选中文字 / 图片">复制</button>
+</div>
+
+<!-- 划词翻译结果 -->
+<div class="tr-pop" id="trPanel" hidden>
+  <div class="tr-head">
+    <span class="tr-title">翻译</span>
+    <span class="tr-meta" id="trMeta"></span>
+    <span class="spacer"></span>
+    <button class="tr-lang" id="btnTrLang" title="切换目标语言">中</button>
+    <button class="icon-btn tiny" id="btnTrCfg" title="翻译设置（本地模型 / 术语表）">⚙</button>
+    <button class="icon-btn tiny" id="btnTrClose" title="关闭 (Esc)">✕</button>
+  </div>
+  <div class="tr-src" id="trSrc"></div>
+  <div class="tr-out" id="trOut">正在翻译…</div>
+  <div class="tr-cfg" id="trCfg" hidden>
+    <p class="tr-cfg-tip"><b>默认已经能用</b>：插件内置「有道免密钥」通道，国内直连、不用注册，
+      单句通常 0.1–0.3 秒；长的选区会按接口上限自动切块并发，不再有 500 字限制。</p>
+    <p class="tr-cfg-tip"><b>本地模型（可选，最快、最私密）</b>：装了 Ollama 就能用，模型只在本机跑，不外传、不排队。
+      地址默认 <code>http://127.0.0.1:11434</code>，模型名<b>可以留空</b>——打开这个面板会自动探测本机已 pull 的模型并填入。</p>
+    <input class="text-input sm" id="trCfgLocalUrl" placeholder="http://127.0.0.1:11434">
+    <input class="text-input sm" id="trCfgLocalModel" placeholder="模型名，例如 qwen2.5:7b">
+    <input class="text-input sm" id="trCfgLocalExe" placeholder="ollama.exe 路径（免安装版才需要，可留空）">
+    <p class="tr-cfg-tip">用<b>解压即用</b>的免安装版时，它不在系统安装位置里，插件点 OCR / 翻译时找不到它。
+      把 <code>ollama.exe</code> 的完整路径填在上一格（例如 <code>D:\ollama\ollama.exe</code>），
+      插件就能自动帮你把服务拉起来，不用每次手动开。</p>
+    <p class="tr-cfg-tip"><b>术语表</b>（可选，只在本地模型生效）：一行一条，<code>英文 = 中文</code>。
+      翻译时只把「这句话里真的出现过」的术语交给模型，专业词的译法就不会被通用引擎的「最常见译法」带偏
+      （<code>dissection</code> 是「解剖」还是「夹层」，机器猜不出来，你知道）。</p>
+    <textarea class="text-input sm tr-gloss" id="trGloss" rows="3" placeholder="dissection = 夹层&#10;intervention = 介入手术&#10;stent = 支架"></textarea>
+    <div class="tr-cfg-acts">
+      <button class="ghost-btn xs" id="btnTrCfgClear">全部清除</button>
+      <span class="spacer"></span>
+      <button class="primary-btn sm" id="btnTrCfgSave">保存并重试</button>
+    </div>
+  </div>
+  <div class="tr-ch" id="trCh" hidden></div>
+  <div class="tr-foot">
+    <span class="tr-note" id="trNote"></span>
+    <span class="spacer"></span>
+    <button class="ghost-btn xs" id="btnTrCopy" disabled>复制译文</button>
+    <button class="primary-btn sm" id="btnTrSave" disabled title="把译文存成笔记（Ctrl+Enter）">存入笔记<span class="kbd" title="Ctrl+Enter">Ctrl ↵</span></button>
+  </div>
+</div>
+
+<!-- 摘录笔记浮层 -->
+<div class="note-popover" id="notePopover" hidden>
+  <div class="np-head">
+    <span class="np-title">笔记</span>
+    <span class="np-meta" id="npMeta"></span>
+  </div>
+  <textarea id="npText" placeholder="写下你的想法…（支持 Markdown）"></textarea>
+  <div class="np-actions">
+    <button class="danger-btn sm" id="npDelete">删除</button>
+    <span class="spacer"></span>
+    <button class="ghost-btn sm" id="npCancel">取消</button>
+    <button class="primary-btn sm" id="npSave" title="保存笔记（Ctrl+Enter）">保存<span class="kbd" title="Ctrl+Enter">Ctrl ↵</span></button>
+  </div>
+</div>
+
+<!-- ==================== 工作台 ==================== -->
+<div class="wb" id="wbView" hidden>
+  <div class="wb-inner">
+    <header class="wb-head">
+      <div class="wb-clock">
+        <div class="wb-time" id="wbTime">--:--:--</div>
+        <div class="wb-date" id="wbDate">—</div>
+      </div>
+      <p class="wb-sub" id="wbSub">正在统计资料库…</p>
+      <div class="wb-head-actions">
+        <button class="ghost-btn sm" id="btnWbRefresh" title="重新统计">刷新</button>
+        <button class="ghost-btn sm" id="btnWbClose" title="返回资料库">返回资料库</button>
+      </div>
+    </header>
+
+    <div class="wb-cards" id="wbCards"></div>
+
+    <div class="wb-grid wb-grid-daily">
+      <section class="wb-block">
+        <h2>每日笔记 · <span id="wbDailyDate">—</span></h2>
+        <textarea class="wb-daily-input" id="wbDaily" placeholder="今天读到什么、想到什么……（Markdown，边写边存）"></textarea>
+        <div class="wb-daily-foot">
+          <span id="wbDailyStat">—</span>
+          <span class="spacer"></span>
+          <button class="ghost-btn xs" id="btnDailyKb">在知识库中查看</button>
+        </div>
+      </section>
+      <section class="wb-block">
+        <h2>最近阅读</h2>
+        <div class="wb-docs" id="wbRecentDocs"></div>
+      </section>
+    </div>
+
+    <div class="wb-grid">
+      <section class="wb-block">
+        <h2>文件类型</h2>
+        <div class="wb-types" id="wbTypes"></div>
+      </section>
+      <section class="wb-block">
+        <h2>年度活动 · <span id="wbYear">—</span></h2>
+        <div class="wb-heat-year" id="wbHeat"></div>
+        <div class="wb-heat-legend"><span id="wbHeatTotal">0 条</span><span class="spacer"></span><span>少</span><i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i><span>多</span></div>
+      </section>
+    </div>
+
+    <section class="wb-block">
+      <h2>最近摘录与笔记</h2>
+      <div class="wb-recent" id="wbRecent"></div>
+    </section>
+
+    <section class="wb-block">
+      <h2>索引与维护</h2>
+      <p class="wb-path" id="wbPath">—</p>
+      <p class="wb-note">摘录与笔记以 Eagle 条目 id 为键存放于此，资料库改名或移动目录都不会失效；整个资料库文件夹搬到另一台电脑，笔记数据原样跟着走。</p>
+      <p class="wb-path" id="wbProjPath">—</p>
+      <p class="wb-hint">工作台就是插件首屏：从 Eagle 插件面板打开本插件即进入这里。Eagle 没有开放主界面侧边栏 / 工具栏的插件入口，所以没法在 Eagle 界面上加实体按钮；想更快唤起，可在 <b>Eagle 偏好设置 → 快捷键 → 插件</b> 里给本插件绑一个快捷键，或在插件面板里右键本插件「设置快捷键」。</p>
+      <div class="wb-maint">
+        <button class="ghost-btn sm" id="btnWbOpenDir">打开索引目录</button>
+        <button class="ghost-btn sm" id="btnWbOpenProj">打开本库数据目录</button>
+        <button class="ghost-btn sm" id="btnWbClearHistory">清空阅读历史</button>
+        <button class="danger-btn sm" id="btnWbClear">清空全部摘录与笔记…</button>
+        <button class="danger-btn sm" id="btnWbWipe" title="把本插件在两个包里写下的全部数据清空（识别模型保留）">清除插件数据…</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ==================== 知识库（便利贴卡片墙） ==================== -->
+<div class="ov" id="kbOverlay" hidden>
+  <div class="ov-card kb-card">
+    <header class="ov-head">
+      <h2>知识库</h2>
+      <div class="chips" id="kbFilters">
+        <button class="chip active" data-kf="all">全部</button>
+        <button class="chip" data-kf="excerpt">摘要</button>
+        <button class="chip" data-kf="note">笔记</button>
+        <button class="chip" data-kf="daily">每日</button>
+      </div>
+      <input class="text-input sm" id="kbSearch" placeholder="搜索摘要 / 笔记 / 文件名…">
+      <span class="spacer"></span>
+      <button class="icon-btn" id="btnKbClose" title="关闭">✕</button>
+    </header>
+    <div class="ms-bar" id="kbBulk" hidden></div>
+    <div class="kb-wrap" id="kbWrap">
+      <div class="kb-grid" id="kbGrid"></div>
+    </div>
+    <footer class="ov-foot"><span id="kbStatus"></span></footer>
+  </div>
+</div>
+
+<!-- ==================== 大笔记框（摘录并笔记） ==================== -->
+<div class="ov" id="noteModal" hidden>
+  <div class="ov-card note-modal">
+    <header class="ov-head">
+      <h2 id="nmTitle">新建笔记</h2>
+      <span class="nm-meta" id="nmMeta"></span>
+      <span class="spacer"></span>
+      <button class="icon-btn" id="btnNmClose" title="关闭">✕</button>
+    </header>
+    <div class="nm-quote" id="nmQuote" hidden></div>
+    <div id="modalEditorSlot" class="note-editor modal-editor"></div>
+    <!-- v4.2.6：阅读页态（双击卡片打开）—— 只读渲染 + 编辑按钮 -->
+    <div class="nm-read md-body" id="nmRead" hidden></div>
+    <footer class="ov-foot" id="nmReadFoot" hidden>
+      <span class="ns-hint">单击列表卡片定位原文 · 双击打开这个阅读页</span>
+      <span class="spacer"></span>
+      <button class="primary-btn sm" id="btnNmEdit">✎ 编辑</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 回收站 ==================== -->
+<div class="ov" id="trashOverlay" hidden>
+  <div class="ov-card trash-card">
+    <header class="ov-head">
+      <h2>回收站</h2>
+      <span class="trash-tip">删除的摘录与笔记保留 30 天，可随时还原</span>
+      <span class="spacer"></span>
+      <button class="icon-btn" id="btnTrashClose" title="关闭">✕</button>
+    </header>
+    <div class="ms-bar" id="trashBulk" hidden></div>
+    <div class="trash-list" id="trashList"></div>
+    <footer class="ov-foot">
+      <span id="trashStatus"></span>
+      <span class="spacer"></span>
+      <button class="danger-btn sm" id="btnTrashEmpty">清空回收站</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== Eagle 库选择器 ==================== -->
+<div class="ov" id="eaglePicker" hidden>
+  <div class="ov-card picker-card">
+    <header class="ov-head">
+      <h2>从 Eagle 导入</h2>
+      <span class="spacer"></span>
+      <button class="icon-btn" id="btnPickClose" title="关闭">✕</button>
+    </header>
+    <div class="pick-bar">
+      <input class="text-input" id="pickSearch" placeholder="输入名称或标签搜索资源库，回车搜索…">
+    </div>
+    <div class="pick-list" id="pickList"></div>
+    <footer class="ov-foot">
+      <span id="pickStatus">只记录条目地址，不复制文件</span>
+      <span class="spacer"></span>
+      <button class="ghost-btn sm" id="btnPickCancel">取消</button>
+      <button class="primary-btn sm" id="btnPickAdd" disabled>添加所选</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ==================== 链接打开方式 ==================== -->
+<div class="link-pop" id="linkPop" hidden>
+  <div class="lp-url" id="lpUrl"></div>
+  <div class="lp-acts">
+    <button class="ghost-btn sm" id="btnLinkBrowser">用默认浏览器打开</button>
+    <button class="ghost-btn sm" id="btnLinkEagle">在 Eagle 中打开</button>
+    <button class="icon-btn tiny" id="btnLinkClose" title="关闭">✕</button>
+  </div>
+</div>
+
+<!-- ==================== 通用确认框 ==================== -->
+<div class="ov" id="confirmOverlay" hidden>
+  <div class="ov-card confirm-card">
+    <h2 id="cfTitle">确认</h2>
+    <p id="cfText"></p>
+    <div class="cf-acts" id="cfActs"></div>
+  </div>
+</div>
+
+<!-- ==================== 首次启动环境检查（v3.16） ====================
+     分享给别人 / 上架插件库后，装完插件第一次打开就把缺什么说清楚：
+     能在插件内下载的（识别引擎、语音模型）直接一键下；
+     要装本体的（Ollama）打开官方下载页；装好的（ollama pull）代跑。
+     「稍后再说」= 不再自动弹，之后随时能在翻译设置的「环境检查」里重开。 -->
+<div class="ov" id="onboardOverlay" hidden>
+  <div class="ov-card onboard-card">
+    <div class="ob-head">
+      <div class="ob-badge" id="obBadge">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.4-3 8.4-7 10-4-1.6-7-5.6-7-10V6l7-3z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.8 12.2l2.2 2.2 4.2-4.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div class="ob-head-text">
+        <h2>环境检查</h2>
+        <p class="onboard-sub">把这些装齐，字幕 / OCR / 离线翻译就都能用了。全部只在本机跑，内容不出网。</p>
+      </div>
+    </div>
+    <p class="onboard-sum" id="onboardSum" hidden></p>
+    <div class="onboard-list" id="onboardList"></div>
+    <div class="onboard-foot">
+      <button class="ghost-btn sm" id="btnOnboardRecheck" title="重新扫一遍当前状态">重新检测</button>
+      <span class="spacer"></span>
+      <button class="link-btn" id="btnOnboardSkip" title="这次先不弄了，以后也不再自动弹">稍后再说</button>
+      <button class="primary-btn sm" id="btnOnboardDone">完成</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script src="vendor/pdfjs/pdf.min.js"></script>
+<script src="vendor/pdflib/pdf-lib.min.js"></script>
+<!-- v4.2.3：拼音模糊搜索（window.pinyinPro.match），加载失败时搜索自动退回纯子串匹配 -->
+<script src="vendor/pinyin-pro.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/markdown.js"></script>
+<script src="js/store.js"></script>
+<script src="js/mediafix.js"></script>
+<script src="js/dbg.js"></script>
+<script src="js/wikilink.js"></script>
+<script src="js/projection.js"></script>
+<script src="js/bridge.js"></script>
+<script src="js/esc.js"></script>
+<script src="js/escguard.js"></script>
+<script src="js/undo.js"></script>
+<script src="js/translator.js"></script>
+<script src="js/pdfdoc.js"></script>
+<script src="js/pdfwrite.js"></script>
+<script src="js/search.js"></script>
+<script src="js/selband.js"></script>
+<script src="js/viewer.js"></script>
+<script src="js/annotations.js"></script>
+<script src="js/videoview.js"></script>
+<script src="js/clipexport.js"></script>
+<script src="js/annotext.js"></script>
+<script src="js/saveas.js"></script>
+<script src="js/imgcache.js"></script>
+<script src="js/asr.js"></script>
+<script src="js/sentbreak.js"></script>
+<script src="js/domainterms.js"></script>
+<script src="js/subtitle.js"></script>
+<!-- v3.30：笔记的语音输入整块下线（三个麦克风入口 + 这套模块）。
+     语音仍然用在「视频转字幕」上，那条链走的是 asr.js / subtitle.js，
+     与这个文件无关。文件先留着不加载，需要时可以一行加回来。 -->
+<script src="js/multiselect.js"></script>
+<script src="js/framewin.js"></script>
+<script src="js/rungate.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/exporter.js"></script>
+<script src="js/workbench.js"></script>
+<script src="js/aisummary.js"></script>
+<script src="js/app.js"></script>
+<script>
+/* 引导看门狗：脚本若因任何原因没能启动，至少把原因显示出来，
+   而不是留一张看起来正常、其实点不动的静态页面。
+   app.js 的 boot() 完成后会置 __PDFWORK_BOOTED = true。 */
+setTimeout(function () {
+  if (window.__PDFWORK_BOOTED) return;
+  var bar = document.getElementById('fatalBar');
+  if (!bar) return;
+  var t = bar.querySelector('.fb-text');
+  if (t) {
+    t.textContent = '界面脚本未能启动（未检测到 '
+      + (window.eagle ? 'Eagle 注入完成' : 'Eagle 环境')
+      + '）。请按 Ctrl+R 重载；若仍无效，请重新加载插件或重启 Eagle。';
+  }
+  bar.hidden = false;
+}, 2500);
+</script>
+</body>
+</html>

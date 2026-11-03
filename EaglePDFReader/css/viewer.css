@@ -1,0 +1,303 @@
+/* ===================== 阅读视口与页面 ===================== */
+.viewport {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  overflow-anchor: none;
+  background: var(--bg);
+  position: relative;
+}
+
+/* 阅读区挂 tabindex="-1" 是为了把键盘焦点抓进来（否则 ←/→ 会被 Eagle 当成切换素材），
+   但浏览器会给「被点到的可聚焦元素」画一圈系统焦点框 —— 点一下阅读区就多一个边框，
+   看起来像出错了。这里关掉：焦点仍然在，只是不画那一圈。 */
+.viewport:focus,
+.viewport:focus-visible {
+  outline: none;
+}
+
+/* 使用块级 + margin auto 居中：页面放大超出视口时仍可向左滚动 */
+.pages {
+  display: block;
+  padding: 18px 22px 72px;
+  min-height: 100%;
+}
+
+.page {
+  position: relative;
+  margin: 0 auto 16px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .14), 0 6px 18px rgba(0, 0, 0, .07);
+  border-radius: 2px;
+  overflow: hidden;
+}
+[data-theme="dark"] .page {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .5), 0 8px 24px rgba(0, 0, 0, .35);
+}
+
+.page canvas {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.page-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(100deg, transparent 20%, rgba(0, 0, 0, .035) 42%, transparent 64%),
+    linear-gradient(#fafafa, #fafafa);
+  background-size: 220% 100%, 100% 100%;
+  animation: skeleton 1.4s linear infinite;
+}
+@keyframes skeleton { to { background-position: -120% 0, 0 0; } }
+.page-rendered .page-skeleton { display: none; }
+
+.page-num {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  z-index: 4;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .05);
+  color: #9a9aa2;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity .15s;
+  pointer-events: none;
+}
+.page:hover .page-num { opacity: 1; }
+
+/* ===================== 高亮 / 框选层（位于文字层之下，绝不挡选字） ===================== */
+.hlLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ann-hl {
+  position: absolute;
+  border-radius: 1px;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+[data-theme="dark"] .ann-hl { mix-blend-mode: multiply; }
+.ann-hl.active {
+  outline: 1.5px solid rgba(59, 111, 224, .85);
+  outline-offset: 1px;
+}
+
+.ann-area {
+  position: absolute;
+  border: 1.5px solid var(--area-color, #4a90e2);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--area-color, #4a90e2) 7%, transparent);
+  pointer-events: none;
+}
+.ann-area.active { box-shadow: 0 0 0 2px var(--accent-soft); }
+
+.ann-tag {
+  position: absolute;
+  top: -17px;
+  left: -1px;
+  height: 15px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--area-color, #4a90e2);
+  color: #fff;
+  font-size: 9px;
+  line-height: 15px;
+  white-space: nowrap;
+  font-weight: 600;
+  letter-spacing: .2px;
+}
+
+/* ===================== 文字层（可选中） ===================== */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  /* v3.21：层本身不可选。以前整层 user-select:text，在文字之间的空白处按下鼠标
+     也会起选，Chromium 会把「最近的文字位置」吸附到行首/行尾，于是稍微偏一点
+     就整行整段变蓝。改成只有 span 能起选，空白处按下不再扩展选区。 */
+  user-select: none;
+  /* 把文字层的重绘限制在自己内部，拖选时不再牵动整页的合成层来回刷 */
+  contain: paint;
+}
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer span { user-select: text; }
+/* 行尾 br 与结构节点不参与选中，它们没有可见文字，却会把选区撑到整行 */
+.textLayer br,
+.textLayer span.markedContent,
+.textLayer .endOfContent { user-select: none; }
+.textLayer span.markedContent { top: 0; height: 0; }
+/* v3.22：原生 ::selection 在 PDF 文字层上按「行盒」渲染，鼠标在行间轻微移动
+   就会把相邻一大段整行涂蓝 —— 这是「蓝色闪烁 / 一动就选一大片」的直接来源。
+   现在原生高亮全程透明，改由 .selBandLayer 画贴合字符的柔和小圆角条带。
+   选中的文本数据依旧来自原生 selection，摘录 / 翻译 / 复制的准确性不变。 */
+.textLayer ::selection,
+.textLayer br::selection { background: transparent; }
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: -1;
+  cursor: default;
+  user-select: none;
+}
+.textLayer .endOfContent.active { top: 0; }
+
+/* 高亮工具下让选区颜色更接近成品色（原生版已停用，保留注释说明意图） */
+/* ===================== v3.22 柔和选区条带 ===================== */
+.selBandLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.sel-band {
+  position: absolute;
+  border-radius: 3px;
+  background: rgba(86, 132, 222, .26);
+  box-shadow: inset 0 0 0 1px rgba(86, 132, 222, .18);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  transition: background-color .12s ease, box-shadow .12s ease;
+}
+[data-theme="dark"] .sel-band {
+  background: rgba(120, 160, 240, .30);
+  box-shadow: inset 0 0 0 1px rgba(120, 160, 240, .22);
+}
+/* 高亮工具下预览色贴近成品琥珀色，避免「预览蓝、存下来黄」的落差 */
+.tool-highlight .sel-band {
+  background: rgba(240, 186, 64, .30);
+  box-shadow: inset 0 0 0 1px rgba(214, 158, 40, .22);
+}
+
+/* 框选 / 锚点模式下禁止选字，避免与拖拽冲突。
+   v3.21：span 现在显式 user-select:text，这里必须连 span 一起关掉，
+   否则「层 none / 子 text」的覆盖关系会让这两个工具下照样能划出选区。 */
+.tool-area .textLayer,
+.tool-note .textLayer,
+.tool-area .textLayer span,
+.tool-note .textLayer span { user-select: none; }
+
+/* ===================== 锚点层（可点击） ===================== */
+.pinLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* v3.31：点中 PDF 里某张图片时，给它描一圈框。
+   页面上并排好几张图、或图挨着正文时，光弹工具条看不出点的是哪张。
+   纯描边 + 极淡底色，不遮内容；pointer-events:none 不挡后续点击与选字。 */
+.img-pick {
+  position: absolute;
+  border: 2px solid var(--accent, #5684de);
+  border-radius: 4px;
+  background: rgba(86, 132, 222, .10);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .55), inset 0 0 0 1px rgba(255, 255, 255, .35);
+  pointer-events: none;
+}
+[data-theme="dark"] .img-pick {
+  background: rgba(120, 160, 240, .14);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .18);
+}
+
+.ann-pin {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 2px;
+  background: var(--pin-color, #f5c542);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .28);
+  cursor: pointer;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(0, 0, 0, .5);
+  font-size: 9px;
+  font-weight: 700;
+  transition: transform .12s;
+}
+.ann-pin:hover { transform: scale(1.1); }
+.ann-pin.active { box-shadow: 0 0 0 3px var(--accent-soft), 0 2px 6px rgba(0, 0, 0, .28); }
+
+.ann-tip {
+  position: absolute;
+  z-index: 40;
+  max-width: 240px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(28, 28, 30, .94);
+  color: #f2f2f5;
+  font-size: 11.5px;
+  line-height: 1.55;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 框选拖拽预览 */
+.area-rubber {
+  position: absolute;
+  z-index: 5;
+  border: 1.5px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* 命中闪烁（v3.14）：只描目标那一条，不再整页铺蓝。
+   .page-flash 那层铺满整页的蒙版已经不用了 —— 它和高亮同色，
+   点一条摘录整个阅读区泛一下蓝，常被误认为高亮渲染出错。 */
+.ann-flash {
+  position: absolute;
+  z-index: 7;
+  pointer-events: none;
+  border-radius: 3px;
+  outline: 2px solid rgba(59, 111, 224, .9);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  animation: annFlash .78s ease-out forwards;
+}
+[data-theme="dark"] .ann-flash { outline-color: rgba(91, 140, 255, .95); }
+@keyframes annFlash {
+  0% { opacity: 0; transform: scale(1.06); }
+  16% { opacity: 1; transform: scale(1); }
+  62% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 工具模式光标 */
+.tool-area .page { cursor: crosshair; }
+.tool-note .page { cursor: copy; }

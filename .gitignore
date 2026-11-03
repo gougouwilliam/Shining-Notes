@@ -1,0 +1,19 @@
+# ===== 构建产物（发 Release，不进 git）=====
+*.eagleplugin
+
+# ===== 大文件 / 本地资产 =====
+local-ai/
+backup/
+plugin-snapshots/
+
+# ===== 本地缓存与工作区数据 =====
+.workbuddy/
+pj.json
+deliverables/
+投稿材料.md
+
+# ===== 运行时产物 =====
+*.log
+window-state.json
+Thumbs.db
+.DS_Store

@@ -1,0 +1,55 @@
+{
+  "id": "LB7PDFRDK3QM",
+  "version": "4.2.16",
+  "platform": "all",
+  "arch": "all",
+  "name": "闪灵笔记",
+  "logo": "./logo.png",
+  "keywords": [
+    "pdf",
+    "笔记",
+    "摘录",
+    "标注",
+    "知识库",
+    "工作台",
+    "每日笔记",
+    "翻译",
+    "markdown",
+    "notes",
+    "有道",
+    "PDF高亮",
+    "视频笔记",
+    "搜索"
+  ],
+  "devTools": false,
+  "main": {
+    "url": "index.html",
+    "width": 1440,
+    "height": 900,
+    "minWidth": 900,
+    "minHeight": 560,
+    "resizable": true,
+    "maximizable": true,
+    "fullscreenable": true,
+    "alwaysOnTop": false,
+    "frame": true,
+    "backgroundColor": "#18191c",
+    "childWindow": false,
+    "multiple": false,
+    "runAfterInstall": true
+  },
+  "preview": {
+    "pdf": {
+      "viewer": {
+        "path": "index.html",
+        "allowZoom": false
+      }
+    },
+    "mp4,m4v,mov,webm,mkv,avi,ogv,wmv,flv,mpg,mpeg,ts,3gp": {
+      "viewer": {
+        "path": "index.html",
+        "allowZoom": false
+      }
+    }
+  }
+}

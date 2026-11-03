@@ -1,0 +1,34 @@
+{
+  "id": "LB7NOTEWB01",
+  "version": "4.2.16",
+  "platform": "all",
+  "arch": "all",
+  "name": "闪灵面板",
+  "logo": "./logo.png",
+  "keywords": [
+    "工作台",
+    "知识库",
+    "每日笔记",
+    "回收站",
+    "笔记",
+    "workbench",
+    "notes"
+  ],
+  "devTools": false,
+  "main": {
+    "url": "workbench.html",
+    "width": 1440,
+    "height": 900,
+    "minWidth": 900,
+    "minHeight": 560,
+    "resizable": true,
+    "maximizable": true,
+    "fullscreenable": true,
+    "alwaysOnTop": false,
+    "frame": false,
+    "backgroundColor": "#18191c",
+    "childWindow": false,
+    "multiple": false,
+    "runAfterInstall": true
+  }
+}
