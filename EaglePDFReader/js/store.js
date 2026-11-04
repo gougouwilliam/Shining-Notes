@@ -136,7 +136,16 @@ const Store = (function () {
       try {
         if (fs.existsSync(df)) return normalize(JSON.parse(fs.readFileSync(df, 'utf8')), meta);
       } catch (e) {
-        console.warn('[Store] 读取索引失败：', df, e);
+        console.warn('[Store] 读取文档失败（疑似损坏）：', df, e);
+        /* v4.2.18：损坏的文档不能默默当空数据用 —— 它还躺在原地，
+           下一次 save 会把它覆盖掉，数据就真没了。先改名隔离留证，
+           用户还能手工抢救（tmp+rename 让损坏只可能来自磁盘级故障，概率极低，
+           但一旦发生必须可恢复而不是被静默清零）。 */
+        try {
+          const bak = df + '.corrupt-' + Date.now();
+          fs.renameSync(df, bak);
+          console.warn('[Store] 已隔离损坏文档 →', bak);
+        } catch (e2) { /* 隔离失败不影响返回空数据 */ }
       }
       return emptyData(meta);      // 有数据目录就以它为准，不再回读 sidecar / localStorage
     }
