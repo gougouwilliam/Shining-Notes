@@ -1257,7 +1257,12 @@ const Projection = (function () {
     if (!hasLiveContent(data, currentEcText(id))) {
       const exists = file && fs.existsSync(file);
       if (!exists) return { ok: true, skipped: true, empty: true };
-      /* 磁盘上这份里若有手记、或注释区被手写过（待写回 Eagle），都不能回收 */
+      /* 磁盘上这份里若有手记、或注释区有 md 独有内容，都不能回收。
+         v4.3.4：旧守卫只看「注释区有没有文本」——插件自己投影的旧值也会挡住
+         回收，摘录笔记删光后留下一具永远没人再触发的空壳。现在只挡
+         「md 独有」的注释文本：与上次写入一致（已同步/队列即将写回 Eagle）
+         的一律放行；用户手改过的（hash ≠ 上次写入）保留，由 ① 合并进队列
+         写回 Eagle，内容零丢失，同步完成后下次自然回收。 */
       let hand = '';
       let ecInFile = '';
       try {
@@ -1266,7 +1271,9 @@ const Projection = (function () {
         const bl = parseBlocks(text);
         ecInFile = dropNoise((bl.ec || {})[anchorId(id, 'ec')] || '');
       } catch (e) { /* 读不了按空处理 */ }
-      if (!hand && !prev.hand && !ecInFile) {
+      const ecRec = prev.items && prev.items['ec:' + anchorId(id, 'ec')];
+      const ecIsOurs = !ecInFile || (!!ecRec && U.hashKey(ecInFile) === ecRec.w);
+      if (!hand && !prev.hand && ecIsOurs) {
         try { fs.unlinkSync(file); } catch (e) { /* 可能已被手动删掉 */ }
         pruneImages(id, prev.images || [], []);
         try {
@@ -1276,7 +1283,7 @@ const Projection = (function () {
         if (manifest[id]) { delete manifest[id]; markManifest(); }
         return { ok: true, removed: true };
       }
-      /* 有手记：手记不能丢，往下走写成空壳 */
+      /* 有手记 / 有 md 独有注释：往下走写成空壳（① 会把手改注释送进队列写回 Eagle） */
     }
 
     /* ① 写之前先看 MD 有没有被手改过 —— 不看就写，等于把用户手打的东西冲掉。

@@ -125,6 +125,7 @@ const FEATURES = [
   /* ── J. 知识库同步（3.37） ── */
   { g: 'J. 知识库同步', n: 'md 投影：锚点 + 手改回读 + 冲突备份', c: [['js/projection.js', 'eagle:ex:'], ['js/projection.js', 'writeConflictFile']], t: 'Projection' },
   { g: 'J. 知识库同步', n: '空内容不建 md，内容清空自动回收（手记保留）', c: [['js/projection.js', 'hasLiveContent'], ['js/projection.js', 'removed: true']], t: 'hasLiveContent' },
+  { g: 'J. 知识库同步', n: '删光内容回收修复：插件旧注释值不挡回收（hash 比对），仅 md 独有文本保留', c: [['js/projection.js', 'const ecIsOurs = !ecInFile || (!!ecRec && U.hashKey(ecInFile) === ecRec.w)'], ['js/projection.js', 'if (!hand && !prev.hand && ecIsOurs)']], t: 'ecIsOurs' },
   { g: 'J. 知识库同步', n: 'Eagle 注释栏双向同步（eagle:ec 锚点 + 官方 API 写回）', c: [['js/projection.js', 'eagle:ec:'], ['js/projection.js', 'eagleApiWrite']], t: 'eagleApiWrite' },
   { g: 'J. 知识库同步', n: 'OB 文件夹移动/改名自动认领（锚点优先，assets 引用按深度重写）', c: [['js/projection.js', 'detectMoves'], ['js/projection.js', 'fixAssetLinks'], ['js/projection.js', 'listVaultMd']], t: 'detectMoves' },
   { g: 'J. 知识库同步', n: '写盘跟手：子文件夹 mkdir + manifest 存相对路径', c: [['js/projection.js', 'mkdirSync(pathMod.dirname(file), { recursive: true })'], ['js/projection.js', 'const relFile = pathMod.relative(root, file)']], t: 'relFile' },

@@ -152,10 +152,10 @@ ok(has(HTML, '快捷键 Ctrl+N'), '按钮 tooltip 也写明快捷键');
 ok(has(CSS, '.note-new-bar .kbd'), '键帽按按钮配色适配（浅色底白字）');
 
 console.log('—— ④ 版本联动 + README ——');
-ok(M1.version === '4.3.3' && M2.version === '4.3.3', '双插件版本号一致 4.3.3');
+ok(M1.version === M2.version && /^\d+\.\d+\.\d+$/.test(M1.version), '双插件版本号一致且三段式');
 ok(/^\d+\.\d+\.\d+$/.test(M1.version), '版本三段式');
-ok(has(RD, '当前版本 **4.3.3**'), 'README 当前版本已更新');
-ok(has(RD, '更新记录 · 4.3.3'), 'README 更新记录存在');
+ok(/当前版本 \*\*\d+\.\d+\.\d+\*\*/.test(RD), 'README 当前版本为三段式');
+ok(/更新记录 · \d+\.\d+\.\d+/.test(RD), 'README 更新记录小节存在');
 ok(has(RD, '文件夹移动') || has(RD, '重新认领'), 'README 描述文件夹认领');
 ok(has(RD, 'Ctrl+N'), 'README 描述 Ctrl+N');
 
