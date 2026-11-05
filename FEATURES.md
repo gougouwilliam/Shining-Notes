@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.3.0）
+# 功能自查对照表（v4.3.1）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -10,7 +10,7 @@
 | 🟡 | 实现点齐，但没有自动测试（多半是纯界面行为） |
 | ❌ | 找不到实现点（要修） |
 
-**合计 90 项：✅ 64 · 🟡 26 · ❌ 0**
+**合计 91 项：✅ 65 · 🟡 26 · ❌ 0**
 
 ## A. 打开与切换
 
@@ -20,7 +20,7 @@
 | ✅ | 插件窗口载入当前选中项 | `js/bridge.js` `js/app.js` | 1 处 |
 | ✅ | 启动器（LB7NOTEWB01）单图标进工作台 | `EagleNoteWorkbench/wb-launch.js` `EagleNoteWorkbench/manifest.json` | 47 处 |
 | 🟡 | 从系统拖入 PDF（getPathForFile 兜底） | `js/app.js` | — |
-| ✅ | 工作台 / 阅读界面互切 | `index.html` `js/app.js` | 43 处 |
+| ✅ | 工作台 / 阅读界面互切 | `index.html` `js/app.js` | 45 处 |
 | ✅ | 最近阅读 → 直接进那篇 | `js/store.js` `js/workbench.js` | 1 处 |
 
 ## B. 阅读
@@ -41,7 +41,7 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | 摘录文字（不弹笔记框） | `js/app.js` | 54 处 |
+| ✅ | 摘录文字（不弹笔记框） | `js/app.js` | 60 处 |
 | 🟡 | 摘录并笔记（直接开大笔记框） | `js/app.js` | — |
 | 🟡 | 复制（CJK 字间空格清洗） | `js/utils.js` | — |
 | 🟡 | 划词翻译（就近弹层） | `js/app.js` `js/translator.js` | — |
@@ -87,7 +87,7 @@
 | ✅ | 截图 / 框选按原分辨率取帧 | `js/videoview.js` `js/app.js` | 4 处 |
 | ✅ | 片段录制（mp4 优先，退 webm） | `js/clipexport.js` `js/app.js` | 3 处 |
 | ✅ | 实时字幕（本地识别 + 精修） | `js/subtitle.js` `js/asr.js` | 23 处 |
-| ✅ | 字幕一键存为笔记 | `js/app.js` | 24 处 |
+| ✅ | 字幕一键存为笔记 | `js/app.js` | 25 处 |
 | ✅ | 标注暂停 / 自动续播 | `js/app.js` | 4 处 |
 | 🟡 | 视频源多路兜底 | `js/videoview.js` | — |
 
@@ -116,6 +116,7 @@
 | ✅ | 每日笔记（自动保存） | `js/workbench.js` `js/store.js` | 1 处 |
 | ✅ | 知识库卡片墙（可打开 / 溯源） | `js/workbench.js` | 13 处 |
 | ✅ | 「清除插件数据…」入口 | `index.html` `js/app.js` | 2 处 |
+| ✅ | Eagle 注释巡检（全库扫标记注释、官方 API 清空、不依赖索引） | `index.html` `js/app.js` | 7 处 |
 
 ## J. 知识库同步
 

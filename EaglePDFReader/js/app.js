@@ -494,6 +494,7 @@
     on('#btnWbOpenProj', 'click', openProjDir);
     on('#btnWbClear', 'click', () => clearAllData());
     on('#btnWbWipe', 'click', () => clearAllData({ wipe: true }));
+    on('#btnWbAnnScan', 'click', annInspectAll);
     on('#btnWbClearHistory', 'click', clearHistoryOnly);
     on('#btnDailyKb', 'click', () => KnowledgeBase.open('daily'));
 
@@ -6227,6 +6228,61 @@
     if (anns) parts.push('清掉 ' + anns + ' 条 Eagle 注释');
     if (annsFailed) parts.push(annsFailed + ' 条注释没清掉（Eagle 拒绝写入）');
     U.toast(parts.join('，'), annsFailed ? '' : 'ok', 4200);
+  }
+
+  /* ==================== Eagle 注释巡检（v4.3.1） ====================
+     背景：Eagle 注释有三层存储——内存、library-caches 缓存、磁盘 metadata.json。
+     插件的正常读写全走官方 API（setAnnotation），Eagle 自己同步三层，
+     不会出现「改了还在」。但索引清空之后的注释残留插件自己就够不着了
+     （clearAllData 靠索引定位条目）——本巡检不依赖索引，全库直接扫。
+     走官方 API 执行，所以运行中就能清，清完界面实时生效。
+     守卫：只认定「行首是【摘录|截图|框选|片段|打点|字幕|笔记|锚点 · 】标记」
+     的注释为插件写入；用户手打的注释一行都不碰。 */
+  function annMarkedOurs(a) {
+    const re = /^【(摘录|截图|框选|片段|打点|字幕|笔记|锚点) · /;
+    return String(a || '').split(/\r?\n/).some((l) => re.test(l.trim()));
+  }
+
+  async function annInspectAll() {
+    if (!Bridge.hasEagle) {
+      U.toast('不在 Eagle 环境里，注释巡检不可用', '', 4000);
+      return;
+    }
+    U.toast('正在扫描全库注释…', '', 3000);
+    const items = await Bridge.getAllItems(['id', 'name', 'annotation']);
+    const suspects = (items || []).filter((it) => annMarkedOurs(it.annotation));
+    if (!suspects.length) {
+      U.toast('巡检完成：全库 ' + (items || []).length + ' 条，没有插件标记的注释残留', 'ok', 6000);
+      return;
+    }
+    /* 复核：item.get 拿到的 annotation 可能是批量快照，逐条 getAnnotation 确认 */
+    const confirmed = [];
+    for (const it of suspects) {
+      try {
+        const cur = await Bridge.getAnnotation(it.id);
+        if (annMarkedOurs(cur)) confirmed.push({ id: it.id, name: it.name });
+      } catch (e) { /* 条目可能已删，跳过 */ }
+    }
+    if (!confirmed.length) {
+      U.toast('巡检完成：批量扫描命中 ' + suspects.length + ' 条，逐条复核后都不是插件标记', 'ok', 6000);
+      return;
+    }
+    const shown = confirmed.slice(0, 5).map((c) => '· ' + (c.name || c.id)).join('\n');
+    const more = confirmed.length > 5 ? ('\n… 等共 ' + confirmed.length + ' 条') : '';
+    const v = await confirmDialog('Eagle 注释巡检',
+      '发现 ' + confirmed.length + ' 条带插件标记的注释：\n' + shown + more +
+      '\n\n将走官方 API 清空（Eagle 界面实时生效，内存/缓存/磁盘三层自动同步）。'
+      + '您手打的注释不受影响。确定执行？',
+      [{ label: '取消', value: 'cancel' },
+       { label: '清空这 ' + confirmed.length + ' 条', value: 'ok', danger: true, primary: true }]);
+    if (v !== 'ok') return;
+    let ok = 0, fail = 0;
+    for (const c of confirmed) {
+      try { await Bridge.setAnnotation(c.id, ''); ok++; }
+      catch (e) { fail++; console.warn('[AnnInspect] 清注释失败', c.id, e); }
+    }
+    U.toast('巡检完成：扫描 ' + (items || []).length + ' 条，清空 ' + ok + ' 条'
+      + (fail ? ('，失败 ' + fail + ' 条（可稍后再点一次重试）') : ''), fail ? '' : 'ok', 7000);
   }
 
   /* 只清「最近阅读」记录（工作台入口），摘录和笔记一条不动 */

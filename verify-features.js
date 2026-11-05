@@ -119,6 +119,7 @@ const FEATURES = [
   { g: 'H. 工作台', n: '每日笔记（自动保存）', c: [['js/workbench.js', 'daily'], ['js/store.js', 'daily.json']], t: '每日笔记' },
   { g: 'H. 工作台', n: '知识库卡片墙（可打开 / 溯源）', c: [['js/workbench.js', 'imagePath'], ['js/workbench.js', 'drag']], t: '知识库' },
   { g: 'H. 工作台', n: '「清除插件数据…」入口', c: [['index.html', 'btnWbWipe'], ['js/app.js', 'clearAllData']], t: 'btnWbWipe' },
+  { g: 'H. 工作台', n: 'Eagle 注释巡检（全库扫标记注释、官方 API 清空、不依赖索引）', c: [['index.html', 'btnWbAnnScan'], ['js/app.js', 'annInspectAll'], ['js/app.js', 'annMarkedOurs']], t: '注释巡检' },
 
   /* ── J. 知识库同步（3.37） ── */
   { g: 'J. 知识库同步', n: 'md 投影：锚点 + 手改回读 + 冲突备份', c: [['js/projection.js', 'eagle:ex:'], ['js/projection.js', 'writeConflictFile']], t: 'Projection' },
