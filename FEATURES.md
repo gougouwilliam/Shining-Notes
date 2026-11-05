@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.3.4）
+# 功能自查对照表（v4.3.5）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -86,7 +86,7 @@
 | ✅ | 六个标注键（截图 / 框选 / 片段 × 并笔记） | `index.html` | 3 处 |
 | ✅ | 截图 / 框选按原分辨率取帧 | `js/videoview.js` `js/app.js` | 4 处 |
 | ✅ | 片段录制（mp4 优先，退 webm） | `js/clipexport.js` `js/app.js` | 3 处 |
-| ✅ | 实时字幕（本地识别 + 精修） | `js/subtitle.js` `js/asr.js` | 23 处 |
+| ✅ | 实时字幕（本地识别 + 精修） | `js/subtitle.js` `js/asr.js` | 27 处 |
 | ✅ | 字幕一键存为笔记 | `js/app.js` | 25 处 |
 | ✅ | 标注暂停 / 自动续播 | `js/app.js` | 4 处 |
 | 🟡 | 视频源多路兜底 | `js/videoview.js` | — |

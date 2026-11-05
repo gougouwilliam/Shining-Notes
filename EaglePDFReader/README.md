@@ -4,7 +4,15 @@
 3.3.0 起，摘录的高亮会**同步写进 PDF 文件本身**（换了阅读器也还在），顶栏是**常驻的全文搜索框**，并新增**视频笔记**。
 零外部依赖，全部资源（PDF.js、pdf-lib、CJK 字符映射、标准字体）随插件本地打包，**除划词翻译外不联网**。
 
-当前版本 **4.3.4**。
+当前版本 **4.3.5**。
+
+---
+
+## 更新记录 · 4.3.5（精修模型下载修复）
+
+- **Bug 修复**：视频实时字幕里点「精修·未装」/ 开播引导下载精修模型，下载刚起步就静默失败（日志报 `Uncaught TypeError: onProgress is not a function @ asr.js`）。根因：API 约定不一致——`Asr.prepare()` 收 `{ onProgress }` 对象，`Asr.ensureRefine()` 收裸函数，subtitle.js 两处调用按 prepare 的样式传了对象，对象是真值、被当函数调用直接炸。
+- 修复：两处调用改传裸函数；`ensureRefine` 归一化防御——两种传参都收，杜绝同类误用。
+- 核实：精修模型本体（SenseVoice 229 MB）在 Clinical Surgery 库完好，此前下载从未成功即本 bug 所致。
 
 ---
 

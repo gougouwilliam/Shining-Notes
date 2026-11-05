@@ -1386,7 +1386,7 @@ const Subtitle = (function () {
         busy = true;
         updateStat();
         let ok2 = true;
-        try { await Asr.ensureRefine({ onProgress: showProgress }); }
+        try { await Asr.ensureRefine(showProgress); }
         catch (e) { ok2 = false; }
         busy = false;
         if (!ok2) {
@@ -1602,7 +1602,7 @@ const Subtitle = (function () {
       const go = $('btnSubGo');
       if (go) go.hidden = true;
       let ok = true;
-      try { await Asr.ensureRefine({ onProgress: showProgress }); } catch (e) { ok = false; }
+      try { await Asr.ensureRefine(showProgress); } catch (e) { ok = false; }
       busy = false;
       if (!ok) { showGuide('精修模型下载失败，检查网络后重试'); return; }
       hideGuide();

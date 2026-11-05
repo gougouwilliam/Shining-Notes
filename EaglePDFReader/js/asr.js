@@ -682,6 +682,11 @@ const Asr = (function () {
   }
 
   async function ensureRefine(onProgress) {
+    /* 兼容两种传参：裸函数（本文档约定）与 { onProgress } 对象（prepare 的样式）——
+       对象是真值，直接当函数调会炸「onProgress is not a function」，下载刚起步就崩（v4.3.5 修） */
+    if (onProgress && typeof onProgress !== 'function' && typeof onProgress.onProgress === 'function') {
+      onProgress = onProgress.onProgress;
+    }
     const k = refineKey();
     if (refinePresent(k)) return true;
     if (!node) throw new Error('当前环境不支持本地识别');
