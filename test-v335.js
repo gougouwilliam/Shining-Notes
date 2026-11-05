@@ -292,7 +292,7 @@ ok(has(PJ, "const WRITE_DELAY = 2600"), '打字停 2.6 秒才落盘（别把同�
 
 /* v4.2.12：md 投影下线，断言随功能反转更新 —— 索引随库走，md 同步面全删 */
 ok(has(BR, 'migrateLegacyIndex(state.dataDir)'), 'Bridge 启动时把旧位置别名索引迁入 .eaglenote（v4.2.12）');
-ok(has(BR, 'Projection.setRoot(state.dataDir)'), '别名索引根 = dataDir（<库>\\.eaglenote，随库走）');
+ok(has(BR, "mm.path.join(state.dataDir, 'vault')") && has(BR, 'Projection.setRoot(vaultDir)'), 'v4.3.0 vault 根 = <库>\\.eaglenote\\vault（随库走）');
 ok(!has(APP, 'function syncFromDisk'), '「立即同步」实现已随 md 下线删除');
 ok(!has(APP, 'function changeProjRoot'), '「更换位置」实现已删');
 ok(!has(APP, "await step('知识库同步钩子'"), '同步钩子启动步骤已删');
@@ -302,7 +302,7 @@ ok(!has(HTML, 'id="btnWbSyncProj"'), '「立即同步 MD」按钮已删');
 ok(!has(HTML, 'id="btnWbOpenHub"'), '「打开知识库根目录」按钮已删');
 ok(has(HTML, '打开本库数据目录'), '「打开本库数据目录」入口保留');
 
-ok(has(WB, 'function projText()') && has(WB, '笔记数据随库走'), '工作台路径显示数据根（<库>\\.eaglenote）');
+ok(has(WB, 'function projText()') && has(WB, 'Obsidian vault · 随库走'), '工作台路径显示 Obsidian vault（<库>\\.eaglenote\\vault）');
 ok(has(WB, 'refreshPath'), '换目录后能就地刷新那行路径');
 
 /* ESC 那套规则不许被这版带坏 */

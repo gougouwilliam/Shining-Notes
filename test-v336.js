@@ -136,9 +136,9 @@ console.log('\n[1] 真跑一遍 Workbench.render()——这正是用户看到红
     ok(typeof sandbox.Workbench.projText === 'function', 'Workbench 导出了 projText（供调试与测试）');
 
     const txt = String(p.textContent || '');
-    /* v4.2.12：md 投影下线 —— 路径行显示数据根，chkMdProj 元素已从 HTML 删除 */
-    ok(txt.indexOf(dir) === 0, '路径那行显示数据根：' + txt.slice(0, 40));
-    ok(txt.indexOf('笔记数据随库走') > 0, '路径行口径 = 笔记数据随库走');
+    /* v4.3.0：路径行显示 Obsidian vault（<库>\.eaglenote\vault），开关未注册时静默跳过 */
+    ok(txt.indexOf(dir) === 0, '路径那行显示 vault 根：' + txt.slice(0, 40));
+    ok(txt.indexOf('Obsidian vault · 随库走') > 0, '路径行口径 = Obsidian vault · 随库走');
   }
 
   /* 再跑一次：第二次 render 不能因为 dataset.loaded 之类卡住或重复绑事件 */

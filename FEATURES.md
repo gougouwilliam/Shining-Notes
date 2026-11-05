@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.2.18）
+# 功能自查对照表（v4.3.0）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -20,7 +20,7 @@
 | ✅ | 插件窗口载入当前选中项 | `js/bridge.js` `js/app.js` | 1 处 |
 | ✅ | 启动器（LB7NOTEWB01）单图标进工作台 | `EagleNoteWorkbench/wb-launch.js` `EagleNoteWorkbench/manifest.json` | 47 处 |
 | 🟡 | 从系统拖入 PDF（getPathForFile 兜底） | `js/app.js` | — |
-| ✅ | 工作台 / 阅读界面互切 | `index.html` `js/app.js` | 42 处 |
+| ✅ | 工作台 / 阅读界面互切 | `index.html` `js/app.js` | 43 处 |
 | ✅ | 最近阅读 → 直接进那篇 | `js/store.js` `js/workbench.js` | 1 处 |
 
 ## B. 阅读
@@ -29,7 +29,7 @@
 | --- | --- | --- | --- |
 | 🟡 | 页码跳转 / 上一页下一页 | `js/app.js` | — |
 | 🟡 | 缩放（加减 / 适宽 / Ctrl+滚轮） | `js/app.js` `js/viewer.js` | — |
-| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 63 处 |
+| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 64 处 |
 | ✅ | 缩略图惰性渲染 | `js/app.js` | 13 处 |
 | ✅ | 目录 / 缩略图弹出面板（v4.1，原左栏） | `js/app.js` `css/app.css` | 5 处 |
 | ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 52 处 |
@@ -41,7 +41,7 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | 摘录文字（不弹笔记框） | `js/app.js` | 53 处 |
+| ✅ | 摘录文字（不弹笔记框） | `js/app.js` | 54 处 |
 | 🟡 | 摘录并笔记（直接开大笔记框） | `js/app.js` | — |
 | 🟡 | 复制（CJK 字间空格清洗） | `js/utils.js` | — |
 | 🟡 | 划词翻译（就近弹层） | `js/app.js` `js/translator.js` | — |
@@ -75,7 +75,7 @@
 | --- | --- | --- | --- |
 | ✅ | 大笔记框（Markdown 实时预览） | `js/editor.js` `js/markdown.js` | 12 处 |
 | 🟡 | 笔记配图（拖入 / 粘贴） | `js/editor.js` | — |
-| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 25 处 |
+| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 30 处 |
 | 🟡 | 笔记可导出 | `js/exporter.js` `js/app.js` | — |
 
 ## F. 视频
@@ -112,7 +112,7 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | 资料库总览 + 时钟 | `js/workbench.js` | 50 处 |
+| ✅ | 资料库总览 + 时钟 | `js/workbench.js` | 53 处 |
 | ✅ | 每日笔记（自动保存） | `js/workbench.js` `js/store.js` | 1 处 |
 | ✅ | 知识库卡片墙（可打开 / 溯源） | `js/workbench.js` | 13 处 |
 | ✅ | 「清除插件数据…」入口 | `index.html` `js/app.js` | 2 处 |
@@ -121,7 +121,7 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | md 投影：锚点 + 手改回读 + 冲突备份 | `js/projection.js` | 42 处 |
+| ✅ | md 投影：锚点 + 手改回读 + 冲突备份 | `js/projection.js` | 52 处 |
 | ✅ | 空内容不建 md，内容清空自动回收（手记保留） | `js/projection.js` | 2 处 |
 | ✅ | Eagle 注释栏双向同步（eagle:ec 锚点 + 官方 API 写回） | `js/projection.js` | 2 处 |
 

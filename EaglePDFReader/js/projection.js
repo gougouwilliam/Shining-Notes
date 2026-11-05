@@ -74,9 +74,11 @@ const Projection = (function () {
 
   try {
     const v = localStorage.getItem(ENABLE_KEY);
-    /* v4.2.12：md 投影默认下线（AI 知识库走 .eaglenote\docs\*.json 权威数据，
-       md 可随时再生成）。只有显式存过 'on' 才开；模块保留作 dormant 代码。 */
-    if (v === 'on') enabled = true;
+    /* v4.3.0：Obsidian 同步复活——默认开启；显式存过 'off' 才关。
+       v4.2.12 曾整体下线（当时用户不需要导出），v4.3.0 应用户要求以
+       「随库 vault + 双向同步」形态回归：vault 固定在 <库>\.eaglenote\vault\，
+       JSON 仍是权威数据，md 只是投影 + 手改回流通道。 */
+    if (v === 'off') enabled = false;
   } catch (e) { /* ignore */ }
 
   /* ---------- 配置 ---------- */
@@ -1642,6 +1644,46 @@ const Projection = (function () {
 
   /* 全量回填：启动后空闲时跑一遍，把历史文档补成 MD。
      force=false 时内容没变的不重写，第二次运行几乎零开销。 */
+  /* v4.3.0 空闲期回读：把 Obsidian 里手改过的 md 吸回 JSON。
+     writeNow 第①步自带「先合并外部改动再写」，所以这里只需要找到
+     被外部动过的条目、按 rebuildAll 同样的方式构造 meta 递进去。
+     返回实际发生合并的条数。 */
+  function syncExternal() {
+    if (!isOn()) return { ok: false, skipped: true, changed: 0 };
+    const ids = externallyChanged();
+    if (!ids.length) return { ok: true, changed: 0 };
+    const want = {};
+    ids.forEach((id) => { want[id] = true; });
+    let changed = 0, docs = 0;
+    let keys = [];
+    try {
+      const idx = Store.getIndex();
+      keys = Object.keys((idx && idx.docs) || {}).filter((k) => k !== '__daily__');
+    } catch (e) { keys = []; }
+    keys.forEach((k) => {
+      let raw = null;
+      try { raw = Store.readDocByKey(k); } catch (e) { raw = null; }
+      if (!raw) return;
+      const iid = raw.itemId || k;
+      const info = itemInfoOf(iid, raw.fileName);
+      const meta = {
+        itemId: iid,
+        name: raw.fileName || info.name || '',
+        filePath: info.path || '',
+        ext: info.ext || 'pdf',
+        libraryName: libName || ''
+      };
+      let data = null;
+      try { data = Store.normalize(raw, meta); } catch (e) { data = raw; }
+      docs++;
+      if (!want[keyOf(meta, data)]) return;   // 这本没被外部改过
+      const r = writeNow(meta, data, false);  // 内部：readExternal → onExternal 合并 → 重写
+      if (r && r.ok && !(r.skipped && !r.removed)) changed++;
+    });
+    flushManifest();
+    return { ok: true, changed, docs };
+  }
+
   function rebuildAll(force) {
     if (!isOn()) return { ok: false, docs: 0, written: 0 };
     let keys = [];
@@ -1720,6 +1762,7 @@ const Projection = (function () {
     remove,
     clearAll,
     rebuildAll,
+    syncExternal,
     /* 测试用：观察 / 回拨注释写回状态（ecLocalAt 回拨可模拟「Eagle 迟迟不落盘」） */
     get _ec() { return { ecLocal: ecLocal, ecLocalAt: ecLocalAt, ecQueue: ecQueue, TTL: EC_LOCAL_TTL }; },
     get SUB() { return SUB; },

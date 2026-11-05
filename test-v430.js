@@ -27,8 +27,8 @@ ok(/### 更新记录 · \d+\.\d+\.\d+/.test(README), 'README 更新记录为三�
 ok(/"version": "\d+\.\d+\.\d+"/.test(MFEST) && /"version": "\d+\.\d+\.\d+"/.test(WFEST), '本轮发版版本号三段式（双 manifest 一致，不随版本号追改）');
 
 console.log('== 2. md 投影下线 ==');
-ok(/if \(v === 'on'\) enabled = true;/.test(P), 'md 默认关：显式存过 on 才开');
-ok(!/if \(v === 'off'\) enabled = false;/.test(P), '旧「默认开」逻辑已移除');
+ok(/if \(v === 'off'\) enabled = false;/.test(P), 'v4.3.0 Obsidian 同步默认开：显式存过 off 才关');
+ok(!/if \(v === 'on'\) enabled = true;/.test(P), 'v4.2.12「默认关」逻辑已移除');
 ok(!A.includes('chkMdProj'), 'app.js 不再引用 md 开关');
 ok(!H.includes('chkMdProj') && !H.includes('btnWbRebuild') && !H.includes('btnWbSyncProj') && !H.includes('btnWbOpenHub') && !H.includes('btnWbChangeProj'), '工作台设置区 md 开关/按钮已删');
 ok(!A.includes('installProjHooks') || A.indexOf('installProjHooks') === A.lastIndexOf('installProjHooks'), '同步钩子函数已删（仅剩墓碑注释）');
@@ -37,7 +37,7 @@ ok(!/rebuildAll\(false\)/.test(A), '启动时历史补齐已删');
 
 console.log('== 3. 别名索引随库（bridge 决策）==');
 ok(/migrateLegacyIndex\(state\.dataDir\)/.test(B), 'bridge 启动时把旧位置索引迁入 dataDir');
-ok(/Projection\.setRoot\(state\.dataDir\)/.test(B), '索引根 = state.dataDir（<库>\\.eaglenote，随库走）');
+ok(/mm\.path\.join\(state\.dataDir, 'vault'\)/.test(B), 'vault 根 = <库>\\.eaglenote\\vault（随库走）');
 ok(!B.includes('setPortableRoot'), 'bridge 不再调用 v4.2.11 的 md 根逻辑');
 ok(!/setHub\(state\.query\.mdroot\)/.test(B) && !/setHub\(null\)/.test(B), 'bridge 不再走盘根 hub 回退');
 ok(/state\.projectionHub = null;/.test(B), 'projectionHub 恒空（无 hub 概念）');
@@ -85,7 +85,7 @@ console.log('== 4. migrateLegacyIndex 行为沙箱 ==');
 })();
 
 console.log('== 5. 工作台口径更新 ==');
-ok(W.includes('笔记数据随库走') && !W.includes('每篇文档一份 .md'), '路径标签改为「笔记数据随库走」');
+ok(W.includes('Obsidian vault · 随库走'), '路径标签改为「Obsidian vault · 随库走」');
 ok(!W.includes('chkMdProj'), 'workbench 不再引用 md 开关');
 ok(H.includes('打开本库数据目录'), '「打开本库笔记」按钮改名「打开本库数据目录」');
 

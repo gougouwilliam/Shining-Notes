@@ -148,7 +148,11 @@
       await step('连接 Eagle', () => Bridge.ready());
       await step('同步窗口底色', () => Bridge.syncWindowBg(document.documentElement.dataset.theme));
 
-      /* v4.2.12：md 投影下线 —— 原「知识库同步钩子」步骤随功能删除。 */
+      /* v4.3.0：Obsidian 同步复活 —— 原「知识库同步钩子」步骤以双向形态回归。
+         writeNow 写前自动「先吸外部手改再写」，这里只负责两件事：
+         ① onExternal：把 md 手改写回权威 JSON 并刷新列表；
+         ② 空闲期轮询 externallyChanged（Obsidian 的改动收不到事件，靠扫描发现）。 */
+      await step('Obsidian 同步钩子', () => { try { startProjSync(); } catch (e) { console.warn('[ProjSync] 启动失败', e); } });
 
       /* v3.34：自绘标题栏要**等 Eagle 连上之后再对一次**。
          同步段那次 init() 已经能绑上按钮（判据改成读 location.search），
@@ -5914,6 +5918,39 @@
   /* 投影层的元信息：条目 id / 书名 / 类型 / 标签 / 所在库名。
      标签和库名只用于 MD 头部的 frontmatter —— 让外部工具（Obsidian、RAG）
      不必再回头查 Eagle 就能知道这条笔记属于哪本书、哪个库。 */
+  /* ---------- v4.3.0 Obsidian 双向同步 ----------
+     vault = <库>\.eaglenote\vault\（随库迁移）。JSON 永远是权威数据；
+     md 是投影 + 手改回流通道。用户承诺不两边同时改，冲突兜底策略：
+     md 为准、被覆盖的旧值落 .conflict 文件（writeConflictFile），绝不静默丢。 */
+  function startProjSync() {
+    if (typeof Projection === 'undefined' || !Projection.setHooks) return;
+    Projection.setHooks({
+      /* writeNow 写前发现 md 被手改 → 在这里落回权威 JSON。
+         Projection 内部 inExternal 守卫保证嵌套 writeNow 不会再触发合并，无循环风险。 */
+      onExternal: (meta, data, edits) => {
+        let n = 0;
+        try { n = Projection.applyEdits(edits) || 0; } catch (e) { n = 0; }
+        if (n > 0) {
+          try { Store.save(meta, data); } catch (e) { console.warn('[ProjSync] 合并落盘失败', e); }
+          try { renderNotes(); } catch (e) { /* 无列表场景忽略 */ }
+          try { renderExcerpts(); } catch (e) { /* ignore */ }
+        }
+      },
+      onMerged: (meta, data, edits) => {
+        try { U.toast('已从 Obsidian 吸回 ' + edits.length + ' 处修改', '', 2400); } catch (e) { /* ignore */ }
+      }
+    });
+    /* 空闲期扫描：15s 一轮，只 stat 清单里认领过的文件，代价可忽略。
+       与当前打开哪本文档无关 —— Obsidian 里改哪本都能吸回来。 */
+    if (startProjSync._timer) clearInterval(startProjSync._timer);
+    startProjSync._timer = setInterval(() => {
+      try {
+        if (typeof Projection === 'undefined' || !Projection.isOn || !Projection.isOn()) return;
+        Projection.syncExternal();
+      } catch (e) { /* ignore */ }
+    }, 15000);
+  }
+
   function projMeta() {
     const it = state.item || {};
     let libraryName = '';

@@ -315,7 +315,13 @@ const Bridge = (function () {
                 try { Projection.migrateLegacyIndex(state.dataDir); } catch (e) { /* 迁移失败不影响启动 */ }
               }
               state.projectionHub = null;
-              state.projectionDir = Projection.setRoot(state.dataDir) ? state.dataDir : null;
+              /* v4.3.0：vault 固定在 <库>\.eaglenote\vault\ —— 随库整体迁移，
+                 重装后 Obsidian「打开文件夹作为仓库」指回这个路径即可。
+                 MANIFEST/LIBFILE 跟着 root 写进 vault（点开头文件，Obsidian 不理），
+                 docs/*.json 权威数据不受影响。 */
+              let vaultDir = null;
+              try { vaultDir = mm.path.join(state.dataDir, 'vault'); } catch (e) { vaultDir = null; }
+              state.projectionDir = (vaultDir && Projection.setRoot(vaultDir)) ? vaultDir : null;
             }
           }
         } catch (err) { console.warn('[Bridge] 初始化别名索引失败', err); }

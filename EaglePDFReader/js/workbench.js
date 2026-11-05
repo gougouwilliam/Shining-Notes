@@ -395,18 +395,41 @@ const Workbench = (function () {
     return n;
   }
 
-  /* 数据目录那行：v4.2.12 起 md 投影下线，这里显示笔记数据根（<库>\.eaglenote） */
+  /* 数据目录那行：v4.3.0 起显示 Obsidian vault（<库>\.eaglenote\vault，随库走） */
   function projText() {
     let dir = null;
     try { dir = (typeof Projection !== 'undefined') ? Projection.dirOf() : null; } catch (e) { dir = null; }
     if (!dir) return '—';
-    return dir + '　（笔记数据随库走）';
+    return dir + '　（Obsidian vault · 随库走）';
   }
 
+  let obsBound = false;
   function refreshPath() {
     const projEl = document.getElementById('wbProjPath');
     const ok = typeof Projection !== 'undefined' && Projection.available();
     if (projEl) projEl.textContent = ok ? projText() : '（不可用：需要在 Eagle 资料库中运行）';
+    /* v4.3.0：Obsidian 双向同步开关。开启时立即 rebuildAll 把已有笔记铺进 vault。 */
+    const chk = document.getElementById('chkObsSync');
+    if (chk && !obsBound) {
+      obsBound = true;
+      chk.addEventListener('change', () => {
+        try {
+          if (typeof Projection === 'undefined' || !Projection.setEnabled) return;
+          Projection.setEnabled(!!chk.checked);
+          if (chk.checked && Projection.rebuildAll) {
+            const r = Projection.rebuildAll(false);
+            if (r && r.ok) U.toast('Obsidian 同步已开启，vault 已铺 ' + (r.written || 0) + ' 篇', '', 3200);
+          } else if (!chk.checked) {
+            U.toast('Obsidian 同步已关闭（vault 文件保留，可随时再开）', '', 3200);
+          }
+        } catch (e) { /* ignore */ }
+      });
+    }
+    if (chk) {
+      let on = false;
+      try { on = (typeof Projection !== 'undefined' && Projection.isOn) ? Projection.isOn() : false; } catch (e) { on = false; }
+      chk.checked = !!on;
+    }
   }
 
   return { open, close, escBack, isOpen, render, openDoc, stopClock, flushDaily, refreshPath, projText, returnToLibrary, refreshCloseBtn };
