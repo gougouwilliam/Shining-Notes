@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.3.5）
+# 功能自查对照表（v4.3.6）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -75,7 +75,7 @@
 | --- | --- | --- | --- |
 | ✅ | 大笔记框（Markdown 实时预览） | `js/editor.js` `js/markdown.js` | 12 处 |
 | 🟡 | 笔记配图（拖入 / 粘贴） | `js/editor.js` | — |
-| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 35 处 |
+| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 36 处 |
 | 🟡 | 笔记可导出 | `js/exporter.js` `js/app.js` | — |
 
 ## F. 视频

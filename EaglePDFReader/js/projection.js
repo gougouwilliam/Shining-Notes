@@ -170,6 +170,7 @@ const Projection = (function () {
       '| --- | --- |',
       '| 一份 `.md` | Eagle 里的一个条目（PDF / 视频） |',
       '| frontmatter 的 `eagle:` | Eagle 条目 id，唯一且改名搬盘都不变 |',
+      '| frontmatter 的 `aliases:` | 原始书名与改名历史，Obsidian 里 `[[书名]]` 靠它解析 |',
       '| frontmatter 的 `source:` | 源文件在磁盘上的真实路径 |',
       '| 每个 `<!-- eagle:ex:… -->` 块 | 一条摘录（引用原文 + 你的批注） |',
       '| 每个 `<!-- eagle:nt:… -->` 块 | 一条笔记 |',
@@ -181,7 +182,9 @@ const Projection = (function () {
       '   改了下次同步会被还原（不然插件就没法定位高亮了）。',
       '2. **「Eagle 注释」区块与 Eagle 的注释栏双向同步**：在 md 里改会写回 Eagle，',
       '   在 Eagle 里改会同步到这里；两边都改过时以 md 为准，Eagle 那份进 .conflict。',
-      '3. **想写不会被覆盖的自由内容**，在文件末尾加一行：',
+      '3. **每条笔记的标题（正文第一行）写成 `#### 标题`**：Obsidian 的 `[[书名#标题]]`',
+      '   只认标题，所以标题升级成了真正的标题头。改标题就改那一行，正文其余部分随便写。',
+      '4. **想写不会被覆盖的自由内容**，在文件末尾加一行：',
       '',
       '   ```',
       '   ' + HAND,
@@ -657,6 +660,23 @@ const Projection = (function () {
     L.push('---');
     L.push('eagle: ' + yamlStr(m.itemId || id));
     L.push('title: ' + yamlStr(name));
+    /* v4.3.6：OB 解析 [[书名]] 只看文件名和 frontmatter 的 aliases。文件名经过
+       safeName（非法字符换空格、超长截断加 …、撞名加 (id)），书名常对不上 ——
+       把原始书名和改名历史一起写进 aliases，OB 里 [[书名]] / [[旧名]] 照常可点。 */
+    const fmAliases = [];
+    const fmSeen = {};
+    const pushAlias = (t) => {
+      t = String(t == null ? '' : t).trim();
+      if (!t) return;
+      const k = WL.normalize(t);
+      if (fmSeen[k]) return;
+      fmSeen[k] = 1;
+      fmAliases.push(t);
+    };
+    pushAlias(name);
+    if (prev && Array.isArray(prev.aliases)) prev.aliases.forEach(pushAlias);
+    const fmList = fmAliases.filter((a) => WL.normalize(a) !== WL.normalize(safeName(name)));
+    if (fmList.length) L.push('aliases: [' + fmList.map(yamlStr).join(', ') + ']');
     L.push('file: ' + yamlStr(m.name || d.fileName || ''));
     if (m.ext) L.push('kind: ' + yamlStr(String(m.ext).toLowerCase()));
     if (m.libraryName) L.push('library: ' + yamlStr(m.libraryName));
@@ -730,16 +750,29 @@ const Projection = (function () {
       liveNotes.forEach((n, i) => {
         const head = n.page ? ('第 ' + n.page + ' 页') : '独立笔记';
         const nid = anchorId(n.id, 'nt' + i);
+        /* v4.3.6：笔记标题（正文第一行）升级成真正的 #### 标题头 —— Obsidian 的
+           [[书#标题]] 只认标题，之前标题藏在正文里，插件里能跳、OB 里全是未解析链接。
+           标题头用原始第一行（不用 WL.noteTitle 的剥壳版：第一行里的 [[双链]]
+           不能丢），正文从第二行写起（OB 里不重复显示标题）；回读时标题头
+           还原成 md 第一行。 */
+        const mdText = String(n.md == null ? '' : n.md).trim();
+        const firstLine = mdText ? mdText.split(/\r?\n/)[0].trim() : '';
         L.push('<!-- eagle:nt:' + nid + ' -->');
         L.push('### ' + head);
+        if (firstLine) {
+          L.push('#### ' + firstLine);
+        }
         L.push('');
         if (String(n.quote || '').trim()) {
           L.push(quoteBlock(n.quote));
           L.push('');
         }
-        if (String(n.md || '').trim()) {
-          L.push(String(n.md).trim());
-          L.push('');
+        if (mdText) {
+          const rest = firstLine ? mdText.split(/\r?\n/).slice(1).join('\n').trim() : mdText;
+          if (rest) {
+            L.push(rest);
+            L.push('');
+          }
         }
         if (n.image) {
           const rel = writeImage(id, n.id || ('note' + i), n.image, images);
@@ -814,18 +847,41 @@ const Projection = (function () {
     return dropNoise(String(seg).slice(m.index + m[0].length));
   }
 
-  /* 笔记块 = 去掉标题行、引用行、图片行之后剩下的正文 */
-  function bodyOfNt(seg) {
+  /* 笔记块 = 去掉标题行、引用行、图片行之后剩下的正文。
+     v4.3.6：紧跟 ### 之后的 #### 行是插件写的笔记标题头（正文第一行升级而来，
+     文本 = 原始第一行 —— 不能用 WL.noteTitle 的剥壳版，否则第一行里的 [[双链]]
+     会在投影里消失，插件反链和 OB 链接一起断）。expectTitle 是本地这条 md 的
+     原始第一行 —— 对得上就把标题头消费掉，返回「标题还原成第一行」的完整存储
+     文本；对不上（用户在 OB 里改了标题）标题头当普通正文收回，下一轮自愈。 */
+  function bodyOfNt(seg, expectTitle) {
     const lines = String(seg || '').split(/\r?\n/);
     const kept = [];
-    lines.forEach((l) => {
-      if (/^\s*###\s/.test(l)) return;
-      if (/^\s*>/.test(l)) return;
-      if (/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(l)) return;
-      if (/^\s*<!--[\s\S]*?-->\s*$/.test(l)) return;
+    let titleTaken = '';
+    const expectN = WL.normalize(expectTitle || '');
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (/^\s*###\s/.test(l)) {
+        /* 标题头必须紧跟 ### 行（中间只许空行），且文本与本地第一行一致才消费 ——
+           用户自己写的 #### 小节不受影响 */
+        for (let j = i + 1; j < lines.length; j++) {
+          const l2 = lines[j];
+          if (!String(l2).trim()) continue;
+          const m = /^\s*####\s+(.*?)\s*$/.exec(l2);
+          if (expectN && m && WL.normalize(m[1].trim()) === expectN) {
+            titleTaken = m[1].trim();
+            i = j;
+          }
+          break;
+        }
+        continue;
+      }
+      if (/^\s*>/.test(l)) continue;                                   // 引用行
+      if (/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(l)) continue;            // 图片行
+      if (/^\s*<!--[\s\S]*?-->\s*$/.test(l)) continue;                 // 注释行
       kept.push(l);
-    });
-    return dropNoise(kept.join('\n'));
+    }
+    const body = dropNoise(kept.join('\n'));
+    return titleTaken ? (titleTaken + (body ? '\n' + body : '')) : body;
   }
 
   /* 只认「单独占一行」的二级标题。早先用 indexOf 判断，结果文件开头的说明文字里
@@ -874,11 +930,15 @@ const Projection = (function () {
       const nid = anchorId(n.id, 'nt' + i);
       const seg = blocks.nt[nid];
       if (seg == null) return;
-      const want = bodyOfNt(seg);
+      /* v4.3.6：插件把笔记标题（正文第一行）写成了 #### 标题头。回读时把标题头
+         还原成 md 第一行（bodyOfNt 消费后返回完整存储文本）—— 没动过就与
+         存储哈希一致，不产生假「外部改动」；改了标题/正文都原样收回。 */
+      const local = String(n.md == null ? '' : n.md).trim();
+      const firstLine = local ? local.split(/\r?\n/)[0].trim() : '';
+      const want = bodyOfNt(seg, firstLine);
       const rec = items['nt:' + nid];
       if (!rec) return;
       if (U.hashKey(want) === rec.w) return;
-      const local = String(n.md == null ? '' : n.md).trim();
       if (want === local) return;
       edits.push({
         kind: 'nt',

@@ -163,7 +163,7 @@ ok(Object.keys(blocks.nt).length === 1, '解析出 1 段笔记');
 ok(has(md1, '> 脾动脉的走行要贴着胰背上缘'), '引用原文以引用块出现');
 ok(has(md1, '**笔记**'), '摘录批注用「**笔记**」起头（回读靠它切段）');
 ok(P.noteOfEx(blocks.ex.ex_a1) === '这里有个解剖变异', 'noteOfEx 能取回批注正文');
-ok(P.bodyOfNt(blocks.nt.nt_c3).indexOf('Cleveland 法') === 0, 'bodyOfNt 能取回笔记正文');
+ok(P.bodyOfNt(blocks.nt.nt_c3, 'Cleveland 法 vs Warshaw 法，后者脾梗风险更高') === 'Cleveland 法 vs Warshaw 法，后者脾梗风险更高', 'bodyOfNt 能取回笔记正文（v4.3.6 标题头消费后还原成存储口径）');
 ok(has(md1, '## 摘录') && has(md1, '## 笔记'), '有「摘录」「笔记」两个分区');
 
 /* ───────────────────── 3. 手改 MD → 读回插件 ───────────────────── */
