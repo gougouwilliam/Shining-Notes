@@ -51,7 +51,7 @@
 | ✅ | 页面锚点（放下就开笔记框） | `js/app.js` | 2 处 |
 | ✅ | 跨页选区拆成多条 | `js/viewer.js` `js/app.js` | 1 处 |
 | ✅ | 五色色板 | `index.html` | 1 处 |
-| ✅ | 双击编辑备注 / Ctrl+Enter 保存 | `js/annotations.js` `js/editor.js` | 35 处 |
+| ✅ | 双击编辑备注 / Ctrl+Enter 保存 | `js/annotations.js` `js/editor.js` | 39 处 |
 | ✅ | 撤销（Ctrl+Z） | `js/undo.js` `js/app.js` | 21 处 |
 | 🟡 | 高亮写进 PDF 文件本身 | `js/pdfwrite.js` `js/app.js` | — |
 | 🟡 | 同步到 Eagle 条目注释 | `js/app.js` `js/bridge.js` | — |
@@ -117,7 +117,7 @@
 | ✅ | 知识库卡片墙（可打开 / 溯源） | `js/workbench.js` | 13 处 |
 | ✅ | 「清除插件数据…」入口 | `index.html` `js/app.js` | 2 处 |
 | ✅ | Eagle 注释巡检（全库扫标记注释、官方 API 清空、不依赖索引） | `index.html` `js/app.js` | 7 处 |
-| ✅ | Ctrl+N 新建笔记（弹窗已开只聚焦不重置草稿） | `js/app.js` | 6 处 |
+| ✅ | Ctrl+N 新建笔记（弹窗已开只聚焦不重置草稿） | `js/app.js` | 9 处 |
 
 ## J. 知识库同步
 

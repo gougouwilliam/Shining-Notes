@@ -3490,6 +3490,14 @@ a.wikilink:hover { text-decoration: underline; }
 }
 .note-new-bar:hover { filter: brightness(1.12); }
 .note-new-bar:active { transform: translateY(1px); }
+/* v4.3.3：按钮上标注 Ctrl+N 快捷键 —— 复用 .kbd 键帽样式，按本按钮配色适配 */
+.note-new-bar .kbd {
+  background: rgba(255, 255, 255, .22);
+  color: #fff;
+  opacity: .92;
+  font-size: 9.5px;
+  margin-left: 6px;
+}
 /* v4.2.5：笔记栏顶部搜索框 + 三层结果页（本文献 → 全局笔记 → Eagle 库） */
 /* v4.2.6：搜索框放大到和「新建笔记」按钮一个量级 —— 之前太小不好点 */
 /* v4.2.7：搜索框独立成卡片，跟上面 OCR / 环境条拉开距离 —— 之前两行贴在一起 */

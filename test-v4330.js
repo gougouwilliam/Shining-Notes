@@ -144,6 +144,13 @@ ok(/const ov = \$\('#noteModal'\);\s*if \(ov && !ov\.hidden\) \{ if \(modalEdito
 ok(/openComposer\('free', null, 'modal'\)/.test(A), '与「✎ 新建笔记」按钮同一入口（居中大窗）');
 ok(/e\.preventDefault\(\);\s*const ov = \$\('#noteModal'\)/.test(A), 'preventDefault 挡掉系统新建窗口手势');
 
+console.log('—— ③b 按钮标注 Ctrl+N ——');
+const HTML = R('EaglePDFReader/index.html');
+const CSS = R('EaglePDFReader/css/app.css');
+ok(/btnNoteNew[^>]*>✎ 新建笔记 <span class="kbd-hint">Ctrl\+N<\/span>/.test(HTML), '新建笔记按钮带 Ctrl+N 键帽标注');
+ok(has(HTML, '快捷键 Ctrl+N'), '按钮 tooltip 也写明快捷键');
+ok(has(CSS, '.note-new-bar .kbd'), '键帽按按钮配色适配（浅色底白字）');
+
 console.log('—— ④ 版本联动 + README ——');
 ok(M1.version === '4.3.3' && M2.version === '4.3.3', '双插件版本号一致 4.3.3');
 ok(/^\d+\.\d+\.\d+$/.test(M1.version), '版本三段式');
