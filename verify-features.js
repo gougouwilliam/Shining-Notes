@@ -120,11 +120,14 @@ const FEATURES = [
   { g: 'H. 工作台', n: '知识库卡片墙（可打开 / 溯源）', c: [['js/workbench.js', 'imagePath'], ['js/workbench.js', 'drag']], t: '知识库' },
   { g: 'H. 工作台', n: '「清除插件数据…」入口', c: [['index.html', 'btnWbWipe'], ['js/app.js', 'clearAllData']], t: 'btnWbWipe' },
   { g: 'H. 工作台', n: 'Eagle 注释巡检（全库扫标记注释、官方 API 清空、不依赖索引）', c: [['index.html', 'btnWbAnnScan'], ['js/app.js', 'annInspectAll'], ['js/app.js', 'annMarkedOurs']], t: '注释巡检' },
+  { g: 'H. 工作台', n: 'Ctrl+N 新建笔记（弹窗已开只聚焦不重置草稿）', c: [['js/app.js', "e.key.toLowerCase() === 'n'"], ['js/app.js', "openComposer('free', null, 'modal')"]], t: 'Ctrl+N' },
 
   /* ── J. 知识库同步（3.37） ── */
   { g: 'J. 知识库同步', n: 'md 投影：锚点 + 手改回读 + 冲突备份', c: [['js/projection.js', 'eagle:ex:'], ['js/projection.js', 'writeConflictFile']], t: 'Projection' },
   { g: 'J. 知识库同步', n: '空内容不建 md，内容清空自动回收（手记保留）', c: [['js/projection.js', 'hasLiveContent'], ['js/projection.js', 'removed: true']], t: 'hasLiveContent' },
   { g: 'J. 知识库同步', n: 'Eagle 注释栏双向同步（eagle:ec 锚点 + 官方 API 写回）', c: [['js/projection.js', 'eagle:ec:'], ['js/projection.js', 'eagleApiWrite']], t: 'eagleApiWrite' },
+  { g: 'J. 知识库同步', n: 'OB 文件夹移动/改名自动认领（锚点优先，assets 引用按深度重写）', c: [['js/projection.js', 'detectMoves'], ['js/projection.js', 'fixAssetLinks'], ['js/projection.js', 'listVaultMd']], t: 'detectMoves' },
+  { g: 'J. 知识库同步', n: '写盘跟手：子文件夹 mkdir + manifest 存相对路径', c: [['js/projection.js', 'mkdirSync(pathMod.dirname(file), { recursive: true })'], ['js/projection.js', 'const relFile = pathMod.relative(root, file)']], t: 'relFile' },
 
   /* ── I. 窗口与退出 ── */
   { g: 'I. 窗口与退出', n: 'ESC 逐级退出（v3.31 起只收浮层，不关插件）', c: [['js/esc.js', 'Esc'], ['js/escguard.js', "'noop'"]], t: 'Esc' },

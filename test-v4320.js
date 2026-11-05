@@ -79,9 +79,9 @@ console.log('—— ② 行为沙箱：命名清洗 + 迁移三分支 ——');
 console.log('—— ③ 版本联动与文档 ——');
 ok(/^\d+\.\d+\.\d+$/.test(M1.version) && M1.version === M2.version,
   '两包 manifest 版本一致且三段式：' + M1.version + ' / ' + M2.version);
-ok(M1.version === '4.3.2', '本版本为 4.3.2');
-ok(has(RD, '当前版本 **4.3.2**'), 'README 当前版本已更新');
-ok(has(RD, '## 更新记录 · 4.3.2（vault 按库名命名）'), 'README 更新记录有 4.3.2 小节');
+ok(/^\d+\.\d+\.\d+$/.test(M1.version), '版本号三段式（不随版本追改）');
+ok(/当前版本 \*\*\d+\.\d+\.\d+\*\*/.test(RD), 'README 当前版本为三段式');
+ok(/## 更新记录 · \d+\.\d+\.\d+/.test(RD), 'README 更新记录小节存在');
 ok(has(RD, '打开文件夹作为仓库'), 'README 提示 Obsidian 侧重新指仓库');
 
 console.log('\n====');

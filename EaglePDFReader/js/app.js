@@ -6579,6 +6579,17 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'w') {
       e.preventDefault(); exitPlugin(); return;
     }
+    /* ---------- Ctrl / ⌘ + N：新建笔记（v4.3.3）----------
+       与「✎ 新建笔记」按钮同一个入口。大笔记框已经开着时绝不重开 ——
+       openComposer 会重置草稿上下文，误按一下就把正写的字清了；
+       此时只把光标送回编辑器。 */
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+      e.preventDefault();
+      const ov = $('#noteModal');
+      if (ov && !ov.hidden) { if (modalEditor) modalEditor.focus(); return; }
+      openComposer('free', null, 'modal');
+      return;
+    }
 
     /* ---------- Ctrl / ⌘ + Enter：保存手头这一份 ----------
        笔记编辑器自己绑了一份，但那只在光标停在正文里时才响 —— 点了预览、点了附件、

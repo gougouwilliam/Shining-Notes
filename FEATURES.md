@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.3.2）
+# 功能自查对照表（v4.3.3）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -10,7 +10,7 @@
 | 🟡 | 实现点齐，但没有自动测试（多半是纯界面行为） |
 | ❌ | 找不到实现点（要修） |
 
-**合计 91 项：✅ 65 · 🟡 26 · ❌ 0**
+**合计 94 项：✅ 68 · 🟡 26 · ❌ 0**
 
 ## A. 打开与切换
 
@@ -29,7 +29,7 @@
 | --- | --- | --- | --- |
 | 🟡 | 页码跳转 / 上一页下一页 | `js/app.js` | — |
 | 🟡 | 缩放（加减 / 适宽 / Ctrl+滚轮） | `js/app.js` `js/viewer.js` | — |
-| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 68 处 |
+| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 73 处 |
 | ✅ | 缩略图惰性渲染 | `js/app.js` | 13 处 |
 | ✅ | 目录 / 缩略图弹出面板（v4.1，原左栏） | `js/app.js` `css/app.css` | 5 处 |
 | ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 52 处 |
@@ -51,7 +51,7 @@
 | ✅ | 页面锚点（放下就开笔记框） | `js/app.js` | 2 处 |
 | ✅ | 跨页选区拆成多条 | `js/viewer.js` `js/app.js` | 1 处 |
 | ✅ | 五色色板 | `index.html` | 1 处 |
-| ✅ | 双击编辑备注 / Ctrl+Enter 保存 | `js/annotations.js` `js/editor.js` | 28 处 |
+| ✅ | 双击编辑备注 / Ctrl+Enter 保存 | `js/annotations.js` `js/editor.js` | 35 处 |
 | ✅ | 撤销（Ctrl+Z） | `js/undo.js` `js/app.js` | 21 处 |
 | 🟡 | 高亮写进 PDF 文件本身 | `js/pdfwrite.js` `js/app.js` | — |
 | 🟡 | 同步到 Eagle 条目注释 | `js/app.js` `js/bridge.js` | — |
@@ -75,7 +75,7 @@
 | --- | --- | --- | --- |
 | ✅ | 大笔记框（Markdown 实时预览） | `js/editor.js` `js/markdown.js` | 12 处 |
 | 🟡 | 笔记配图（拖入 / 粘贴） | `js/editor.js` | — |
-| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 31 处 |
+| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 34 处 |
 | 🟡 | 笔记可导出 | `js/exporter.js` `js/app.js` | — |
 
 ## F. 视频
@@ -117,6 +117,7 @@
 | ✅ | 知识库卡片墙（可打开 / 溯源） | `js/workbench.js` | 13 处 |
 | ✅ | 「清除插件数据…」入口 | `index.html` `js/app.js` | 2 处 |
 | ✅ | Eagle 注释巡检（全库扫标记注释、官方 API 清空、不依赖索引） | `index.html` `js/app.js` | 7 处 |
+| ✅ | Ctrl+N 新建笔记（弹窗已开只聚焦不重置草稿） | `js/app.js` | 6 处 |
 
 ## J. 知识库同步
 
@@ -125,6 +126,8 @@
 | ✅ | md 投影：锚点 + 手改回读 + 冲突备份 | `js/projection.js` | 53 处 |
 | ✅ | 空内容不建 md，内容清空自动回收（手记保留） | `js/projection.js` | 2 处 |
 | ✅ | Eagle 注释栏双向同步（eagle:ec 锚点 + 官方 API 写回） | `js/projection.js` | 2 处 |
+| ✅ | OB 文件夹移动/改名自动认领（锚点优先，assets 引用按深度重写） | `js/projection.js` | 15 处 |
+| ✅ | 写盘跟手：子文件夹 mkdir + manifest 存相对路径 | `js/projection.js` | 2 处 |
 
 ## I. 窗口与退出
 

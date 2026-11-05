@@ -503,7 +503,11 @@ const Projection = (function () {
     const prev = manifest[id];
     const title = safeName(U.stripExt((meta && meta.name) || (data && data.fileName) || ''));
     if (prev && prev.file && prev.title === title) return pathMod.join(root, prev.file);
-    return pathMod.join(root, fileNameOf(meta, data, id));
+    /* v4.3.3：改名/重算文件名时跟着用户在 OB 里安排的文件夹走 ——
+       文件已被挪进子文件夹的，新名字也落在同一个文件夹，不再回根目录长重复文件 */
+    const dirPart = (prev && prev.file) ? pathMod.dirname(prev.file) : '.';
+    const base = fileNameOf(meta, data, id);
+    return (dirPart && dirPart !== '.') ? pathMod.join(root, dirPart, base) : pathMod.join(root, base);
   }
 
   /* ---------- 文本工具 ---------- */
@@ -1008,6 +1012,105 @@ const Projection = (function () {
     return out;
   }
 
+  /* ---------- v4.3.3 OB 文件夹移动认领 ----------
+     用户在 Obsidian 里按自己的文件夹树整理笔记（新建文件夹、拖动、F2 改名）。
+     manifest 记的是相对路径 —— 文件一挪窝，按老路径就找不到了，表现为：
+     回读轮询静默失明、保存时在老位置再长一份（重复文件）。
+     这里负责把挪窝后的文件重新认领回来：
+       ① 按 frontmatter 的 eagle: "<条目id>" 认（移动 + 改名都能认出，优先）；
+       ② 锚点不在时退回按文件名认；同名多份时放弃 —— 宁可不认领，也绝不认错。
+     认领后 manifest.rec.file 更新为新相对路径，此后 15s 轮询回读、保存写盘
+     全部跟着新位置走；assets 图片引用按新深度重写（挪进子目录补 ../，
+     挪回根目录去掉），截图在 OB 里不裂。 */
+  let lastMoveCheck = 0;
+  function listVaultMd(dir, out) {
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return out; }
+    entries.forEach((ent) => {
+      const p = pathMod.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name === 'assets' || /^\./.test(ent.name)) return;   // 图片资产与 .obsidian 不进笔记树
+        listVaultMd(p, out);
+      } else if (ent.isFile()) {
+        if (!/\.md$/i.test(ent.name)) return;
+        if (/\.orphan-|\.conflict-|\.tmp$/.test(ent.name)) return;   // 孤儿/冲突/临时件不认领
+        out.push(p);
+      }
+    });
+    return out;
+  }
+
+  /* 把文件里的 assets 引用改成与新深度匹配的相对路径 */
+  function fixAssetLinks(text, rel) {
+    const depth = rel.split('/').length - 1;
+    const prefix = depth > 0 ? '../'.repeat(depth) : '';
+    return text.replace(/\]\((?:\.\.\/)*assets\//g, '](' + prefix + 'assets/');
+  }
+
+  function detectMoves(force) {
+    if (!root || !fs.existsSync(root)) return 0;
+    const now = Date.now();
+    if (!force && now - lastMoveCheck < 3000) return 0;   // 节流：writeNow 每次保存都过这里
+    lastMoveCheck = now;
+    const missing = [];
+    Object.keys(manifest).forEach((id) => {
+      const rec = manifest[id];
+      if (!rec || !rec.file) return;
+      try { if (fs.existsSync(pathMod.join(root, rec.file))) return; } catch (e) { return; }
+      missing.push(id);
+    });
+    if (!missing.length) return 0;
+
+    /* 还在册的文件不算候选，防止把「原件」当成「移动后的副本」认领 */
+    const claimed = {};
+    Object.keys(manifest).forEach((id2) => {
+      const rec2 = manifest[id2];
+      if (rec2 && rec2.file) {
+        try { if (fs.existsSync(pathMod.join(root, rec2.file))) claimed[pathMod.join(root, rec2.file).toLowerCase()] = true; } catch (e) { /* ignore */ }
+      }
+    });
+
+    /* 只有真丢了文件才扫盘：eagle 锚点 → 路径、文件名 → 路径 */
+    const byAnchor = {}, byName = {};
+    listVaultMd(root, []).forEach((f) => {
+      if (claimed[f.toLowerCase()]) return;
+      let text = '';
+      try { text = fs.readFileSync(f, 'utf8'); } catch (e) { return; }
+      const m = /^eagle:\s*"([^"]+)"/m.exec(text);
+      if (m) (byAnchor[m[1]] = byAnchor[m[1]] || []).push(f);
+      const bn = pathMod.basename(f).replace(/\.md$/i, '');
+      (byName[bn] = byName[bn] || []).push(f);
+    });
+
+    let n = 0;
+    missing.forEach((id3) => {
+      const rec3 = manifest[id3];
+      let hit = null;
+      if (byAnchor[id3] && byAnchor[id3].length === 1) hit = byAnchor[id3][0];
+      else {
+        const key = rec3.title || pathMod.basename(rec3.file).replace(/\.md$/i, '');
+        const cands = byName[key];
+        if (cands && cands.length === 1) hit = cands[0];
+      }
+      if (!hit) return;
+      const rel = pathMod.relative(root, hit).split(pathMod.sep).join('/');
+      try {
+        const text2 = fs.readFileSync(hit, 'utf8');
+        const fixed = fixAssetLinks(text2, rel);
+        if (fixed !== text2) {
+          const tmp2 = hit + '.tmp';
+          fs.writeFileSync(tmp2, fixed, 'utf8');
+          fs.renameSync(tmp2, hit);
+        }
+      } catch (e) { return; }
+      rec3.file = rel;
+      rec3.at = Date.now();
+      n++;
+    });
+    if (n) { markManifest(); wikiCache = null; }
+    return n;
+  }
+
   /* ---------- 写入 ---------- */
   function flushManifest() {
     if (manifestTimer) { clearTimeout(manifestTimer); manifestTimer = null; }
@@ -1141,6 +1244,10 @@ const Projection = (function () {
     if (!isOn() || !meta || !data) return { ok: false, skipped: true };
     const id = keyOf(meta, data);
     const prev = manifest[id] || {};
+    /* v4.3.3：写之前先认领一遍 —— 用户可能刚在 OB 里把文件挪进/挪出文件夹，
+       不认领就写会在老位置再长一份出来（重复文件）。内部带 3s 节流，
+       全量 rebuild 时也只会真正扫一次盘。 */
+    detectMoves();
     const file = fileOf(meta, data);
 
     /* ⓪ 内容全空就不落盘：md 文件跟着内容走 —— 产生第一条摘录/笔记/注释才建文件；
@@ -1269,12 +1376,17 @@ const Projection = (function () {
     }
 
     try {
+      /* v4.3.3：文件可能落在子文件夹（用户在 OB 里移动过），先确保目录存在 */
+      try { fs.mkdirSync(pathMod.dirname(file), { recursive: true }); } catch (e) { /* 已存在 */ }
       const tmp = file + '.tmp';
       fs.writeFileSync(tmp, out.text, 'utf8');
       fs.renameSync(tmp, file);
 
-      /* 书名改了 / 撞名消解 → 删掉旧文件名那份 */
-      if (prev.file && prev.file !== pathMod.basename(file)) {
+      /* manifest 永远存 posix 风格相对路径（可能带子文件夹） */
+      const relFile = pathMod.relative(root, file).split(pathMod.sep).join('/');
+
+      /* 书名改了 / 撞名消解 → 删掉旧文件名那份（旧文件也可能在子文件夹里） */
+      if (prev.file && prev.file !== relFile) {
         try { fs.unlinkSync(pathMod.join(root, prev.file)); } catch (e) { /* 已经不在了 */ }
       }
       pruneImages(id, prev.images, out.images);
@@ -1285,7 +1397,7 @@ const Projection = (function () {
       Object.keys(keys).forEach((k) => { items[k] = { w: keys[k], l: keys[k] }; });
 
       manifest[id] = {
-        file: pathMod.basename(file),
+        file: relFile,
         title: safeName(U.stripExt((meta && meta.name) || (data && data.fileName) || '')),
         hash: U.hashKey(out.text),
         items,
@@ -1651,6 +1763,7 @@ const Projection = (function () {
      返回实际发生合并的条数。 */
   function syncExternal() {
     if (!isOn()) return { ok: false, skipped: true, changed: 0 };
+    detectMoves();                       // v4.3.3：先把被移动/改名的文件认领回来，回读才找得到
     const ids = externallyChanged();
     if (!ids.length) return { ok: true, changed: 0 };
     const want = {};
@@ -1750,6 +1863,8 @@ const Projection = (function () {
     eagleApiWrite,
     drainEcWrites,
     externallyChanged,
+    detectMoves,
+    fixAssetLinks,
     writeConflictFile,
     writeNow,
     sync,
