@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.3.1）
+# 功能自查对照表（v4.3.2）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -29,7 +29,7 @@
 | --- | --- | --- | --- |
 | 🟡 | 页码跳转 / 上一页下一页 | `js/app.js` | — |
 | 🟡 | 缩放（加减 / 适宽 / Ctrl+滚轮） | `js/app.js` `js/viewer.js` | — |
-| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 64 处 |
+| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 68 处 |
 | ✅ | 缩略图惰性渲染 | `js/app.js` | 13 处 |
 | ✅ | 目录 / 缩略图弹出面板（v4.1，原左栏） | `js/app.js` `css/app.css` | 5 处 |
 | ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 52 处 |
@@ -75,7 +75,7 @@
 | --- | --- | --- | --- |
 | ✅ | 大笔记框（Markdown 实时预览） | `js/editor.js` `js/markdown.js` | 12 处 |
 | 🟡 | 笔记配图（拖入 / 粘贴） | `js/editor.js` | — |
-| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 30 处 |
+| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 31 处 |
 | 🟡 | 笔记可导出 | `js/exporter.js` `js/app.js` | — |
 
 ## F. 视频
@@ -122,7 +122,7 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | md 投影：锚点 + 手改回读 + 冲突备份 | `js/projection.js` | 52 处 |
+| ✅ | md 投影：锚点 + 手改回读 + 冲突备份 | `js/projection.js` | 53 处 |
 | ✅ | 空内容不建 md，内容清空自动回收（手记保留） | `js/projection.js` | 2 处 |
 | ✅ | Eagle 注释栏双向同步（eagle:ec 锚点 + 官方 API 写回） | `js/projection.js` | 2 处 |
 

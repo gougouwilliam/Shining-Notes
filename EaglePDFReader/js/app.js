@@ -5920,7 +5920,8 @@
      标签和库名只用于 MD 头部的 frontmatter —— 让外部工具（Obsidian、RAG）
      不必再回头查 Eagle 就能知道这条笔记属于哪本书、哪个库。 */
   /* ---------- v4.3.0 Obsidian 双向同步 ----------
-     vault = <库>\.eaglenote\vault\（随库迁移）。JSON 永远是权威数据；
+     vault = <库>\.eaglenote\闪灵笔记 - <库名>\（v4.3.2 按库名命名，随库迁移）。
+     JSON 永远是权威数据；
      md 是投影 + 手改回流通道。用户承诺不两边同时改，冲突兜底策略：
      md 为准、被覆盖的旧值落 .conflict 文件（writeConflictFile），绝不静默丢。 */
   function startProjSync() {

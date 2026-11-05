@@ -315,12 +315,27 @@ const Bridge = (function () {
                 try { Projection.migrateLegacyIndex(state.dataDir); } catch (e) { /* 迁移失败不影响启动 */ }
               }
               state.projectionHub = null;
-              /* v4.3.0：vault 固定在 <库>\.eaglenote\vault\ —— 随库整体迁移，
+              /* v4.3.0：vault 固定在 <库>\.eaglenote\<vault 目录>\ —— 随库整体迁移，
                  重装后 Obsidian「打开文件夹作为仓库」指回这个路径即可。
                  MANIFEST/LIBFILE 跟着 root 写进 vault（点开头文件，Obsidian 不理），
-                 docs/*.json 权威数据不受影响。 */
+                 docs/*.json 权威数据不受影响。
+                 v4.3.2：目录名 = 闪灵笔记 - <库名>（库名 = 库文件夹去掉 .library 后缀，
+                 与 Eagle 界面显示一致）——Obsidian 仓库切换器里多库一眼区分，
+                 不再是一排毫无辨识度的「vault」。旧 vault/ 目录同盘 rename 迁移，
+                 内容零拷贝零丢失；新名已存在则不动（避免覆盖）。 */
               let vaultDir = null;
-              try { vaultDir = mm.path.join(state.dataDir, 'vault'); } catch (e) { vaultDir = null; }
+              try {
+                const libBase = mm.path.basename(state.libraryPath || '')
+                  .replace(/\.library$/i, '').replace(/[\\/:*?"<>|]/g, ' ')
+                  .replace(/\s+/g, ' ').trim();
+                const vname = libBase ? ('闪灵笔记 - ' + libBase) : '闪灵笔记';
+                vaultDir = mm.path.join(state.dataDir, vname);
+                const legacyVault = mm.path.join(state.dataDir, 'vault');
+                if (mm.fs.existsSync(legacyVault) && !mm.fs.existsSync(vaultDir)) {
+                  mm.fs.renameSync(legacyVault, vaultDir);
+                  console.info('[Bridge] vault 已按库名改名迁移:', vname);
+                }
+              } catch (e) { vaultDir = null; }
               state.projectionDir = (vaultDir && Projection.setRoot(vaultDir)) ? vaultDir : null;
             }
           }

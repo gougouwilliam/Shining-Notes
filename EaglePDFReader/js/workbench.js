@@ -395,7 +395,7 @@ const Workbench = (function () {
     return n;
   }
 
-  /* 数据目录那行：v4.3.0 起显示 Obsidian vault（<库>\.eaglenote\vault，随库走） */
+  /* 数据目录那行：v4.3.0 起显示 Obsidian vault（.eaglenote 下随库走，v4.3.2 按库名命名） */
   function projText() {
     let dir = null;
     try { dir = (typeof Projection !== 'undefined') ? Projection.dirOf() : null; } catch (e) { dir = null; }

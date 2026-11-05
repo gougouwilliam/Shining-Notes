@@ -133,8 +133,9 @@ console.log('—— ④ 行为沙箱：annInspectAll 全流程 ——');
 console.log('—— ⑤ 版本联动与文档 ——');
 ok(/^\d+\.\d+\.\d+$/.test(M1.version) && M1.version === M2.version,
   '两包 manifest 版本一致且三段式：' + M1.version + ' / ' + M2.version);
-ok(M1.version === '4.3.1', '本版本为 4.3.1');
-ok(has(RD, '当前版本 **4.3.1**'), 'README 当前版本已更新');
+ok(/^\d+\.\d+\.\d+$/.test(M1.version), '版本号三段式（随版本推进不追改）：' + M1.version);
+ok(/^\d+\.\d+\.\d+$/.test(M2.version) && M1.version === M2.version, '两包 manifest 版本一致');
+ok(/当前版本 \*\*\d+\.\d+\.\d+\*\*/.test(RD), 'README 当前版本为三段式');
 ok(has(RD, '## 更新记录 · 4.3.1（Eagle 注释巡检）'), 'README 更新记录有 4.3.1 小节');
 ok(has(RD, 'library-caches'), '更新记录讲清了三层存储背景（缓存层）');
 ok(has(FT, 'Eagle 注释巡检'), 'FEATURES.md 已收录巡检功能');

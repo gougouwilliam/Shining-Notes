@@ -76,8 +76,9 @@ const Projection = (function () {
     const v = localStorage.getItem(ENABLE_KEY);
     /* v4.3.0：Obsidian 同步复活——默认开启；显式存过 'off' 才关。
        v4.2.12 曾整体下线（当时用户不需要导出），v4.3.0 应用户要求以
-       「随库 vault + 双向同步」形态回归：vault 固定在 <库>\.eaglenote\vault\，
-       JSON 仍是权威数据，md 只是投影 + 手改回流通道。 */
+       「随库 vault + 双向同步」形态回归：vault 固定在 .eaglenote 下
+      （v4.3.2 起目录名 = 闪灵笔记 - <库名>），JSON 仍是权威数据，
+       md 只是投影 + 手改回流通道。 */
     if (v === 'off') enabled = false;
   } catch (e) { /* ignore */ }
 
