@@ -140,6 +140,8 @@ const FEATURES = [
   { g: 'I. 窗口与退出', n: 'ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役）', c: [['js/app.js', 'exitPlugin();']], t: 'EscExit' },
   { g: 'I. 窗口与退出', n: 'v4.4.1 关窗身份守卫：绝不把 close/destroy 施加到 Eagle 主窗口', c: [['js/winguard.js', 'closeVerdict'], ['js/bridge.js', 'closeVerdict'], ['js/app.js', 'if (!verdict.allow)']], t: 'WinGuard' },
   { g: 'I. 窗口与退出', n: 'v4.4.1 宿主恢复兜底：只 restore/show，不 minimize/hide', c: [['js/bridge.js', 'function focusParent(opts)'], ['js/app.js', '[120, 420].forEach']], t: 'focusParent' },
+  { g: 'I. 窗口与退出', n: 'v4.4.3 两级许可：预览窗口 windowID≠parentID 时放行 window.close、仍封死 remote', c: [['js/winguard.js', 'allowWindowClose'], ['js/winguard.js', 'sameWebContentsAsHost'], ['js/app.js', 'if (!verdict.allow && verdict.allowWindowClose) {']], t: 'WinGuard2' },
+  { g: 'I. 窗口与退出', n: 'v4.4.3 现场诊断：debug.log 补记 windowIdentity 全字段与 selfclose 决策', c: [['js/app.js', "dbg('exit.env', Bridge.windowIdentity())"], ['js/app.js', "dbg('exit.selfclose', verdict)"]], t: 'exit.env' },
   { g: 'I. 窗口与退出', n: 'Ctrl+W 关闭', c: [['js/app.js', 'ctrlKey'], ['js/app.js', "'w'"]], t: 'Ctrl+W' },
   { g: 'I. 窗口与退出', n: '预览模式紧凑布局（mode-preview）', c: [['css/app.css', 'mode-preview']], t: 'mode-preview' },
   { g: 'I. 窗口与退出', n: '窗口底色跟随主题（不闪白）', c: [['js/bridge.js', 'syncWindowBg']], t: 'syncWindowBg' },

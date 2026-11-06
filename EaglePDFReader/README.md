@@ -4,7 +4,20 @@
 3.3.0 起，摘录的高亮会**同步写进 PDF 文件本身**（换了阅读器也还在），顶栏是**常驻的全文搜索框**，并新增**视频笔记**。
 零外部依赖，全部资源（PDF.js、pdf-lib、CJK 字符映射、标准字体）随插件本地打包，**除划词翻译外不联网**。
 
-当前版本 **4.4.2**。
+当前版本 **4.4.3**。
+
+---
+
+## 更新记录 · 4.4.3（修复「一操作后 ESC 只弹提示、退不出插件」）
+
+- **用户实测**：通过插件打开文档，什么都不操作按 ESC 能退出插件；一旦在插件里操作过，再按 ESC 就只弹「当前是 Eagle 预览视图，为保护主界面不执行关闭」。现场 `debug.log` 里 43 次裁决全是 `no-self-id`，一次都没放行。
+- **事实更正**：翻 Eagle 4.0 `app.asar` 的 `pluginModule.openPreview`，预览视图其实是 `new BrowserWindow({...})` **独立承载** 的，`dom-ready` 注入 `window.parentID = 主窗口 webContents.id`、`window.windowID = win.webContents.id`。所以 `windowID !== parentID` 恰恰证明「我不是主窗口」。v4.4.1 把「有 parentID」一律当成「跑在主窗口的 webview 里」，又要求必须拿到 `@electron/remote` 的 `selfId` 才放行 —— 预览窗口里 remote 经常不可用，于是连自己的预览窗口都不敢关。
+- **为什么「有没有操作」会不一样**：刚打开时焦点还在 Eagle 主窗口，ESC 由宿主自己退出预览；一旦操作，`grabKeys()` 把焦点抢进插件，ESC 被插件吞掉并走 `exitPlugin()`，才撞上守卫拒绝。主窗口的 `escHandler` 只做 `leaveDetailMode()`，不会最小化 —— 当年「一起最小化」的锅不在 ESC 冒泡，而在 remote/IPC 关窗路径可能指回主窗口。
+- **修复① 两级许可**（`winguard.js`）：`allow` 保持原语义（能否对 remote / IPC 拿到的窗口执行 `close`/`destroy`，证据最严）；新增 `allowWindowClose`（能否 `window.close()`，它只作用于**当前 renderer 所在窗口**，天然不跨窗口）。只有「当前 JS 确实与主窗口共用 webContents」（`windowID === parentID`）或 `selfIsHost` 才禁止。现场 `no-self-id` 现在得到 `{allow:false, allowWindowClose:true}`。
+- **修复② 独立预览窗口关自己**（`app.js`）：守卫拒绝 remote、但允许 `window.close()` 时，保存草稿 → `focusParent({focus:false})` 只 restore/show 宿主 → `window.close()` 关掉自己的预览窗口 → 120/420ms 再补两次恢复。**全程不调用** `closeSelf` / `destroySelf` / `ipcWindow` / `destroy`。Electron 个别版本静默拒绝脚本关窗时，900ms 后给一句可执行提示（按空格或点 Eagle 的返回）。
+- **修复③ 诊断补全**：`debug.log` 增记 `exit.env`（mode / parentID / windowID / selfId / allIds）与 `exit.selfclose`。上次只记裁决码，看不出生效形态，白排查一轮。
+- 安全边界不变：`windowID === parentID`、`flagged-host`、`browser-mode`、`unknown-mode` 一律零窗口操作；ESC 仍无条件吞掉，绝不漏给宿主；`Ctrl+W` / ✕ 走同一出口。
+- 本版不改投影 / 数据 / 模型，也不动 ESC 的浮层、搜索、输入优先级。
 
 ---
 

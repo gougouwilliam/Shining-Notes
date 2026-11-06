@@ -6503,11 +6503,38 @@
        和 IPC 的 BrowserWindow.fromWebContents(sender) 都可能指回主窗口；
        对主窗口 close() 会被 Eagle 的「关闭到托盘」拦成最小化 —— 用户实测
        「按 ESC 连同 Eagle 一起最小化」。守卫不过就一个窗口 API 都不碰。 */
-    let verdict = { allow: true, code: 'no-guard' };
+    let verdict = { allow: true, allowWindowClose: true, code: 'no-guard' };
     try {
       if (Bridge.closeVerdict) verdict = Bridge.closeVerdict();
       dbg('exit.guard', verdict);
+      /* v4.4.3：把取证原始字段也落盘。上次只记裁决码，现场 43 行全是
+         no-self-id，却看不出 mode / windowID / parentID，白排查一轮。 */
+      if (Bridge.windowIdentity) dbg('exit.env', Bridge.windowIdentity());
     } catch (e) { dbg('exit.guard.err', e); }
+
+    /* v4.4.3：预览窗口其实是独立 BrowserWindow（Eagle app.asar 的 openPreview
+       用 new BrowserWindow，dom-ready 注入 windowID ≠ parentID）。
+       现场预览窗口里 @electron/remote 拿不到 selfId，守卫于是把 remote / IPC
+       那条路封死（allow=false）—— 这是对的，那条路可能指回主窗口。
+       但 window.close() 只作用于**当前窗口**，绝不会碰 Eagle 主界面，
+       所以单独放行这一条：关掉预览窗口 = 用户要的「ESC 退出插件」。
+       全程不调用 closeSelf / destroySelf / ipcWindow，也不抢焦点。 */
+    if (!verdict.allow && verdict.allowWindowClose) {
+      dbg('exit.selfclose', verdict);
+      try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
+      try { window.close(); } catch (e) { /* ignore */ }
+      [120, 420].forEach((ms) => setTimeout(() => {
+        try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
+      }, ms));
+      /* Electron 个别版本会静默拒绝脚本关窗：留一句可执行的兜底提示 */
+      setTimeout(() => {
+        if (!alive()) return;
+        U.toast('窗口未关闭，请按空格或点 Eagle 的返回退出预览', '', 3200);
+      }, 900);
+      exiting = false;
+      return;
+    }
+
     if (!verdict.allow) {
       /* 只做恢复，不做关闭：万一这一下 ESC 仍旧漏给了 Eagle、把主窗口收走，
          这里把它 restore+show 回来（不抢焦点，插件还开着）。 */
