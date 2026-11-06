@@ -132,8 +132,8 @@ console.log('\n[3] ESC：笔记框不再弹确认框、危险层按可见性体�
   ok(app.indexOf('if (closeVisibleOverlay()) return;') > -1,
     '没有层可关时先按可见性兜底关浮层');
   ok(app.indexOf('function closeVisibleOverlay') > -1, '有按可见性关浮层的实现');
-  ok(/if \(closeVisibleOverlay\(\)\) return;[\s\S]{0,200}?escExitHint\(\)/.test(app),
-    '兜底也关不掉时只提示「退出请按 Ctrl+W」，不关窗口');
+  ok(/if \(closeVisibleOverlay\(\)\) return;[\s\S]{0,900}?exitPlugin\(\);/.test(app),
+    'v4.4.0：兜底也关不掉时 exitPlugin() 关闭插件（用户要求恢复 ESC 关闭）');
   ok(app.indexOf('tryEagleHide') < 0, '退出路径不再调 eagle.window.hide()（那会把整个 Eagle 收进托盘）');
 
   const html = read('EaglePDFReader/index.html');

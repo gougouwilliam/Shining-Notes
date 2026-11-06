@@ -4626,14 +4626,18 @@
     return false;
   }
 
-  /* v4.2：书打开后定位到标题匹配的那条笔记（正文第一行口径，见 WikiLink.noteTitle）。
-     先精确等值，再「包含」；连引用原文都搜一遍兜底。切到笔记页、高亮、滚进视野。 */
+  /* v4.2：书打开后定位到标题匹配的那条笔记。
+     v4.4.0：优先按 noteAnchorTitle（正文第一行原样 —— 与投影 md 的 #### 标题头、
+     manifest rec.nt、[[ 补全插入完全同源）精确等值；再退 noteTitle 剥壳版
+     （兼容 v4.3 时代写出的旧链接），连引用原文都搜一遍兜底。 */
   function locateNoteByTitle(title) {
     const want = String(title || '').trim().toLowerCase();
     if (!want || !state.data) return false;
     const notes = collectNotes();
+    const anchorOf = (n) => (typeof WikiLink !== 'undefined' && WikiLink.noteAnchorTitle ? WikiLink.noteAnchorTitle(n.md) : '').toLowerCase();
     const titleOf = (n) => (typeof WikiLink !== 'undefined' && WikiLink.noteTitle ? WikiLink.noteTitle(n.md) : '').toLowerCase();
-    const hit = notes.find((n) => titleOf(n) === want)
+    const hit = notes.find((n) => anchorOf(n) === want)
+      || notes.find((n) => titleOf(n) === want)
       || notes.find((n) => titleOf(n).indexOf(want) >= 0)
       || notes.find((n) => String(n.quote || '').toLowerCase().indexOf(want) >= 0);
     if (!hit) {
@@ -6513,9 +6517,9 @@
   }
 
   /* v3.27：ESC 的最后一道保险 —— 先把「用户眼前还开着的东西」关掉。
-     v3.31：它现在是**唯一**的兜底，后面不再接 exitPlugin。
-     栈可能少一层（某个浮层忘了 push），这时 escapeAction 会判成 noop，
-     于是按一下 ESC 什么都不关、也能看出浮层还在 —— 所以这里按真实可见性补一次。 */
+     v4.4.0：它排在 exit-plugin 之前 —— 栈可能少一层（某个浮层忘了 push），
+     escapeAction 会判成 exit-plugin，先把真实可见的浮层关掉，用户想退还得再按一下。
+     这样「关浮层」永远快于「关窗口」，不会一按 ESC 把还开着东西的窗口直接带走。 */
   const ESC_VISIBLE_CLOSERS = [
     ['confirmOverlay', () => { if (typeof cfResolve === 'function') cfResolve('cancel'); }],
     ['noteModal', () => closeNoteModalByEsc()],
@@ -6551,16 +6555,8 @@
   /* 全屏时只把「第一下 ESC」让给浏览器，避免残留全屏状态把 ESC 永久吞掉 */
   let escFsPassed = false;
 
-  /* v3.31：ESC 不再关窗口之后，「按了没反应」需要一个交代。
-     只在真的没东西可关时说一句，8 秒内不重复，免得连按几下刷屏。 */
-  let escHintAt = 0;
-  function escExitHint() {
-    const now = Date.now();
-    if (now - escHintAt < 8000) return;
-    escHintAt = now;
-    U.toast('ESC 只关闭浮层；要退出插件请按 Ctrl+W', '', 2200);
-  }
-
+  /* v4.4.0：ESC 最后一级改回「关闭插件」（用户要求），escExitHint 连同它的
+     8 秒去重一起退役 —— 「按了没反应」本身就不存在了。决策点在 escguard.js。 */
   function onKeyDown(e) {
     const tag = (e.target.tagName || '').toLowerCase();
     const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
@@ -6657,8 +6653,8 @@
       }
 
       /* v3.22：动作判定抽到 js/escguard.js（纯函数，可测）。
-         v3.31：判定里已经没有「退出插件」这一档了 —— ESC 只往回收一层，
-         退出统一走 Ctrl+W。详见 escguard.js 顶部注释。 */
+         v4.4.0：最后一档恢复「退出插件」—— 用户要求 ESC 关闭插件；
+         恢复前提：决策点只剩 escguard 一处，且事件无条件被吞（见下）。 */
       pruneEscLayers();
 
       const box = $('#searchInput');
@@ -6672,7 +6668,7 @@
 
       const EG = window.EscGuard;
       const act = (EG && EG.escapeAction) ? EG.escapeAction(env)
-        : (env.depth > 0 ? 'pop-layer' : 'noop');
+        : (env.depth > 0 ? 'pop-layer' : 'exit-plugin');
       /* v3.31：**一律吞掉，绝不再漏给宿主**。
          以前退出时故意不 preventDefault，本意是「我们关不掉就让 Eagle 兜」，
          结果 Eagle 一收到 ESC 就把整个界面收走 —— 用户想关掉一个另存为框，
@@ -6688,8 +6684,11 @@
       }
       /* 栈比界面少一层时的兜底：眼前还有看得见的浮层，就先把它关掉 */
       if (closeVisibleOverlay()) return;
-      /* 什么都不用关 → 只说一句怎么退出，绝不关窗口 */
-      escExitHint();
+      /* v4.4.0：什么都不用关 → 关闭插件（与 ✕ / Ctrl+W 同一条出口，会顺带存草稿）。
+         v3.31 时代这里只提示「退出请按 Ctrl+W」；用户要求恢复 ESC 关闭。
+         安全前提：决策点只剩 escguard 一处，且事件已无条件 preventDefault + stopPropagation，
+         绝不会漏给 Eagle 宿主（v3.21 三层兜底误退的事故不会再发生）。 */
+      exitPlugin();
       return;
     }
 

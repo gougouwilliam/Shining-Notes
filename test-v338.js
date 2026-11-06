@@ -137,9 +137,9 @@ console.log('\n[3] 交互铁律（规范 §3）');
   ok(EG.escapeAction({ depth: 2 }) === 'pop-layer', '有浮层 → pop-layer（只弹栈顶）');
   ok(EG.escapeAction({ searchActive: true }) === 'clear-search', '搜索有字 → 只清搜索');
   ok(EG.escapeAction({ typing: true }) === 'blur', '正在输入 → 失焦');
-  ok(EG.escapeAction({}) === 'noop', '其余 → noop（不关窗，提示按 Ctrl+W）');
+  ok(EG.escapeAction({}) === 'exit-plugin', '其余 → exit-plugin（v4.4.0：ESC 关闭插件，用户要求恢复）');
   ok([EG.escapeAction({ depth: 1 }), EG.escapeAction({ searchActive: 1 }), EG.escapeAction({ typing: 1 }), EG.escapeAction({})]
-    .every((v) => v !== 'exit-plugin' && v !== 'close'), '四档返回值里没有任何关窗档');
+    .every((v) => v !== 'close'), 'v4.4.0：四档只有最后一档允许 exit-plugin，无历史遗留的 close 档');
 
   const kdStart = appCode.indexOf('function onKeyDown');
   const kdEnd = appCode.indexOf('\n  function ', kdStart + 10);

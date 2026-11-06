@@ -305,8 +305,8 @@ ok(has(HTML, '打开本库数据目录'), '「打开本库数据目录」入口�
 ok(has(WB, 'function projText()') && has(WB, 'Obsidian vault · 随库走'), '工作台路径显示 Obsidian vault（<库>\\.eaglenote\\vault）');
 ok(has(WB, 'refreshPath'), '换目录后能就地刷新那行路径');
 
-/* ESC 那套规则不许被这版带坏 */
-ok(has(APP, 'noop'), 'ESC 仍然只收一层（不关窗的契约还在）');
+/* ESC 那套规则不许被这版带坏（v4.4.0 起空栈档恢复为 exit-plugin，noop 退役） */
+ok(has(APP, 'exitPlugin();'), 'ESC 空栈走 exitPlugin() 关闭插件（v4.4.0 契约）');
 const FW = read('EaglePDFReader/js/framewin.js');
 ok(has(FW, 'App.exit'), '顶栏 ✕ 仍然走 App.exit');
 

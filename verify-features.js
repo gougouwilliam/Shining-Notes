@@ -131,11 +131,11 @@ const FEATURES = [
   { g: 'J. 知识库同步', n: '写盘跟手：子文件夹 mkdir + manifest 存相对路径', c: [['js/projection.js', 'mkdirSync(pathMod.dirname(file), { recursive: true })'], ['js/projection.js', 'const relFile = pathMod.relative(root, file)']], t: 'relFile' },
 
   /* ── I. 窗口与退出 ── */
-  { g: 'I. 窗口与退出', n: 'ESC 逐级退出（v3.31 起只收浮层，不关插件）', c: [['js/esc.js', 'Esc'], ['js/escguard.js', "'noop'"]], t: 'Esc' },
+  { g: 'I. 窗口与退出', n: 'ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一）', c: [['js/esc.js', 'Esc'], ['js/escguard.js', "'exit-plugin'"]], t: 'Esc' },
   { g: 'I. 窗口与退出', n: 'ESC 一律吞掉，不漏给 Eagle', c: [['js/app.js', 'stopPropagation()']], t: 'Esc' },
   { g: 'I. 窗口与退出', n: 'ESC 真能关窗（IPC close→destroy）', c: [['js/bridge.js', 'ipcWindow'], ['js/bridge.js', 'closeSelf']], t: 'closeSelf' },
   { g: 'I. 窗口与退出', n: '关不掉时常驻横幅 + 再试/最小化', c: [['js/app.js', 'exitFailBanner'], ['css/app.css', 'exit-fail']], t: 'exitFailBanner' },
-  { g: 'I. 窗口与退出', n: 'ESC 无层可关时提示「退出请按 Ctrl+W」', c: [['js/app.js', 'escExitHint']], t: 'escExitHint' },
+  { g: 'I. 窗口与退出', n: 'ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役）', c: [['js/app.js', 'exitPlugin();']], t: 'EscExit' },
   { g: 'I. 窗口与退出', n: 'Ctrl+W 关闭', c: [['js/app.js', 'ctrlKey'], ['js/app.js', "'w'"]], t: 'Ctrl+W' },
   { g: 'I. 窗口与退出', n: '预览模式紧凑布局（mode-preview）', c: [['css/app.css', 'mode-preview']], t: 'mode-preview' },
   { g: 'I. 窗口与退出', n: '窗口底色跟随主题（不闪白）', c: [['js/bridge.js', 'syncWindowBg']], t: 'syncWindowBg' },

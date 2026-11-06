@@ -35,17 +35,18 @@ const EG = require('./EaglePDFReader/js/escguard.js');
 const VideoView = require('./EaglePDFReader/js/videoview.js');
 
 /* ───────────────────── 1. ESC 只往回收一层 ───────────────────── */
-console.log('\n[1] ESC：永不关窗口');
+console.log('\n[1] ESC：v4.4.0 起最后一级 = 关闭插件（决策点唯一，事件不漏宿主）');
 
-ok(EG.escapeAction({ depth: 0 }) === 'noop', '空栈 → noop');
-ok(EG.escapeAction() === 'noop', '空参数 → noop');
-ok(EG.escapeAction({ forceExit: true, depth: 0 }) === 'noop', 'forceExit 传了也是 noop');
-ok(EG.escapeAction({ launcher: true, depth: 0 }) === 'noop', '启动器窗口无浮层 → noop');
+ok(EG.escapeAction({ depth: 0 }) === 'exit-plugin', '空栈 → exit-plugin（关闭插件）');
+ok(EG.escapeAction() === 'exit-plugin', '空参数 → exit-plugin');
+ok(EG.escapeAction({ forceExit: true, depth: 0 }) === 'exit-plugin', 'forceExit 传了也按空栈判（遗迹参数无特权）');
+ok(EG.escapeAction({ launcher: true, depth: 0 }) === 'exit-plugin', '启动器窗口无浮层 → exit-plugin');
 ok(EG.escapeAction({ depth: 1 }) === 'pop-layer', '有浮层 → 收一层');
 ok(EG.escapeAction({ depth: 0, searchActive: true }) === 'clear-search', '搜索有字 → 清搜索');
 ok(EG.escapeAction({ depth: 0, typing: true }) === 'blur', '正在输入 → 失焦');
 
-/* 穷举一批参数组合，确认没有任何一条能返回 exit-plugin */
+/* 穷举一批参数组合：exit-plugin 只允许出现在「无浮层、无搜索、无输入」的组合里，
+   有浮层时无论其他参数怎么变都必须 pop-layer（浮层永远快于关窗） */
 (() => {
   let bad = null;
   let tried = 0;
@@ -59,14 +60,15 @@ ok(EG.escapeAction({ depth: 0, typing: true }) === 'blur', '正在输入 → 失
             for (const n of names) {
               tried++;
               const act = EG.escapeAction({ launcher: l, searchActive: s, typing: t, depth: d, topName: n, forceExit: f });
-              if (act === 'exit-plugin') bad = { l, s, t, f, d, n };
+              if (d > 0 && act !== 'pop-layer') bad = { l, s, t, f, d, n };
+              if (d === 0 && act === 'pop-layer') bad = { l, s, t, f, d, n };
             }
           }
         }
       }
     }
   }
-  ok(!bad, '穷举 ' + tried + ' 组参数：没有一组返回 exit-plugin');
+  ok(!bad, '穷举 ' + tried + ' 组参数：exit-plugin 只出现在空栈组合（' + JSON.stringify(bad) + '）');
 })();
 
 console.log('\n[1b] ESC：三处兜底拆干净');
@@ -74,19 +76,19 @@ console.log('\n[1b] ESC：三处兜底拆干净');
 ok(!/function escUiSig\(\)/.test(APP), 'app.js 里 e<s>cUiSig（空转签名）已删');
 ok(!/escStall/.test(APP), 'app.js 里「连续无进展计数」已删');
 ok(!/forceExit:\s*dbl/.test(APP), 'env 里不再传 forceExit');
-ok(has(APP, 'escExitHint()'), '无层可关时只提示怎么退出');
-ok(/ESC 只关闭浮层；要退出插件请按 Ctrl\+W/.test(APP), '提示文案说清了新规矩');
-ok(/if \(closeVisibleOverlay\(\)\) return;/.test(APP), '兜底关完浮层就返回，不再往下走退出');
+ok(!/escExitHint\s*\(/.test(APP), 'v4.4.0：escExitHint 退役（按了没反应的交代不存在了）');
+ok(/if \(closeVisibleOverlay\(\)\) return;/.test(APP), '兜底先按可见性关浮层');
+ok(/closeVisibleOverlay\(\)\) return;[\s\S]{0,900}?exitPlugin\(\);/.test(APP),
+  '兜底也关不掉 → exitPlugin() 关闭插件（与 ✕ / Ctrl+W 同一出口）');
 
-/* ESC 分支里不许出现 exitPlugin() */
+/* ESC 分支：认领时间戳仍在所有 return 之前；exitPlugin 只许出现在最后一级 */
 (() => {
   const f = APP.indexOf('function onKeyDown');
   const i = APP.indexOf("if (e.key === 'Escape') {", f);
-  const k = APP.indexOf('escExitHint();', i);
-  const end = APP.indexOf('\n    }', k);
-  const ESC = APP.slice(i, end > 0 ? end : i + 3000);
-  ok(i > 0 && k > i && end > k, '能定位到 ESC 分支（' + ESC.length + ' 字符）');
-  ok(ESC.indexOf('exitPlugin') < 0, 'ESC 分支里没有任何 exitPlugin() 调用');
+  const end = APP.indexOf('\n    }', APP.indexOf('escFsPassed = false;', i));
+  const ESC = APP.slice(i, end > 0 ? end : i + 6000);
+  ok(i > 0 && end > i, '能定位到 ESC 分支（' + ESC.length + ' 字符）');
+  ok(ESC.indexOf('exitPlugin') > 0, 'v4.4.0：ESC 分支最后一级有 exitPlugin()');
   const claim = ESC.indexOf('window.__escHandledAt = Date.now()');
   const firstReturn = ESC.indexOf('return;');
   ok(claim > 0 && claim < firstReturn, '认领时间戳在任何 return 之前（' + claim + ' < ' + firstReturn + '）');

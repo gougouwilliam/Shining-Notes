@@ -299,8 +299,8 @@ function loadFrameWin(opts) {
   ok(/flushDrafts\(\)/.test(APP), '关窗前存草稿（✕ 复用这条路，笔记不会丢）');
 
   const EG = require('./EaglePDFReader/js/escguard.js');
-  ok(EG.escapeAction({ depth: 0 }) === 'noop', 'ESC 空栈仍是 noop');
-  ok(EG.escapeAction({ launcher: true, depth: 0 }) === 'noop', '启动器窗口 ESC 仍是 noop');
+  ok(EG.escapeAction({ depth: 0 }) === 'exit-plugin', 'v4.4.0：ESC 空栈 = 关闭插件（用户要求恢复）');
+  ok(EG.escapeAction({ launcher: true, depth: 0 }) === 'exit-plugin', '启动器窗口空栈 ESC 同样关闭插件');
 
   const WB = read('EaglePDFReader/js/workbench.js');
   ok(/function close\(\) \{[\s\S]{0,400}?Esc\.remove\('workbench'\)/.test(WB), 'Workbench.close() 会摘掉自己的 ESC 层');

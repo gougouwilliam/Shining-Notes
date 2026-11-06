@@ -23,12 +23,12 @@ const E = require('./EaglePDFReader/js/escguard.js');
 const S = require('./EaglePDFReader/js/selband.js');
 const R = require('./EaglePDFReader/js/rungate.js');
 
-console.log('\n[1] ESC 动作判定：v3.31 起 ESC 永不关窗口');
+console.log('\n[1] ESC 动作判定：v4.4.0 起最后一级 = 关闭插件（用户要求恢复；决策点唯一）');
 (() => {
   ok(E.escapeAction({ launcher: true, depth: 1, topName: 'workbench' }) === 'pop-layer',
-    'launcher + 栈顶工作台 → pop-layer（ESC 只往回收，不再退出整窗）');
-  ok(E.escapeAction({ launcher: true, depth: 0 }) === 'noop',
-    'launcher + 无浮层 → noop（什么都不做，窗口留着）');
+    'launcher + 栈顶工作台 → pop-layer（ESC 只往回收，不越过未保存确认）');
+  ok(E.escapeAction({ launcher: true, depth: 0 }) === 'exit-plugin',
+    'launcher + 无浮层 → exit-plugin（v4.4.0：ESC 关闭插件）');
   ok(E.escapeAction({ launcher: true, depth: 2, topName: 'confirm' }) === 'pop-layer',
     'launcher + 确认框在上 → pop-layer（不越过未保存确认）');
   ok(E.escapeAction({ launcher: false, depth: 1, topName: 'workbench' }) === 'pop-layer',
@@ -37,39 +37,36 @@ console.log('\n[1] ESC 动作判定：v3.31 起 ESC 永不关窗口');
     '搜索框有字 → clear-search');
   ok(E.escapeAction({ depth: 0, typing: true }) === 'blur',
     '正在输入 → blur（留给输入法）');
-  ok(E.escapeAction({ depth: 0 }) === 'noop', '无浮层无输入 → noop（绝不关窗口）');
-  ok(E.escapeAction() === 'noop', '空参数 → noop');
-  /* 用户的原话：「想关闭另存为，按 ESC，也退出 eagle 界面了」。
-     forceExit 就是给这种场景准备的「连按两次强退」—— 现在整条拿掉。 */
+  ok(E.escapeAction({ depth: 0 }) === 'exit-plugin', '无浮层无输入 → exit-plugin（关闭插件）');
+  ok(E.escapeAction() === 'exit-plugin', '空参数 → exit-plugin');
+  /* forceExit 是 v3.21「连按两次强退」的遗迹，早就不存在于 env 里；
+     传了也只按普通优先级判定 —— 不会跳过浮层直接退窗。 */
   ok(E.escapeAction({ forceExit: true, launcher: true, depth: 2, topName: 'workbench' }) === 'pop-layer',
     'forceExit 已废弃：传了也只收一层');
-  ok(E.escapeAction({ forceExit: true, depth: 0 }) === 'noop',
-    'forceExit 再也不能把窗口关掉');
-  const acts = ['exit-plugin'];
+  /* exit-plugin 只在「无浮层、无搜索、无输入」这一档出现，永不越过浮层 */
   ['', 'a', null].forEach((k) => {
-    ok(E.escapeAction({ depth: 0, topName: k, launcher: !!k }) !== 'exit-plugin',
-      '任何参数组合都不会返回 exit-plugin（' + JSON.stringify(k) + '）');
+    ok(E.escapeAction({ depth: 1, topName: k, launcher: !!k }) === 'pop-layer',
+      '有浮层时永不返回 exit-plugin（' + JSON.stringify(k) + '）');
   });
-  ok(acts.indexOf(E.escapeAction({ depth: 0 })) < 0, '「退出插件」这一档整条删除');
+  ok(E.escapeAction({ depth: 0 }) === 'exit-plugin', '「退出插件」这一档在 v4.4.0 恢复（仅空栈）');
 })();
 
-console.log('\n[1b] 连续 ESC 模拟：按多少下都不许关窗口');
+console.log('\n[1b] 连续 ESC 模拟：浮层永远快于关窗');
 (() => {
-  /* 用户实测场景：另存为框弹不出来，想按 ESC 把它关掉 ——
-     旧实现第二下就判定「空转」并强退，于是 Eagle 界面跟着没了。
-     现在没有「强退」这条路径，连按多少下都只是逐层回收。 */
+  /* v4.4.0 场景：有浮层时按多少下都是逐层回收，不会跳过浮层直接关窗；
+     无浮层时第一下就明确返回 exit-plugin（可预期，不再空转）。 */
   const t0 = 1000000;
   let closedAt = -1;
   for (let i = 0; i < 5; i++) {
     const act = E.escapeAction({ depth: 1, topName: 'toolbar' });
     if (act === 'exit-plugin') { closedAt = i; break; }
   }
-  ok(closedAt === -1, '连按五下都不会退出（旧实现第二下就关窗）');
+  ok(closedAt === -1, '有浮层时连按五下都不会跳过浮层退出（浮层永远快于关窗）');
 
-  /* 无层可关时连按：也只是重复 noop，不会升级成退出 */
+  /* 无层可关时连按：每一下都是 exit-plugin，行为稳定可预期 */
   let act2 = null;
   for (let i = 0; i < 5; i++) act2 = E.escapeAction({ depth: 0 });
-  ok(act2 === 'noop', '空栈连按五下仍是 noop');
+  ok(act2 === 'exit-plugin', '空栈连按五下仍是 exit-plugin（不升级、不突变）');
 
   /* 真的逐级退出：三层界面依次回收，每一下都是 pop-layer */
   let steps = 0;
@@ -238,9 +235,10 @@ console.log('\n[10] 接线静态断言');
   /* v3.23：ESC 不再可能「按了没反应」 */
   ok(app.indexOf('pruneEscLayers()') > -1, 'app.js 每次 ESC 前做栈体检');
   ok(app.indexOf('Esc.prune') > -1 || app.indexOf('Esc.prune(') > -1, '调用 Esc.prune 清理失效层');
-  /* v3.31：ESC 分支里不能出现任何 exitPlugin() 调用 —— 它就是把 Eagle 一起关掉的出口 */
-  ok(!/if \(act === 'pop-layer'\)[\s\S]{0,1200}?exitPlugin\(\)/.test(app),
-    'ESC 各个分支之后都不再有 exitPlugin()');
+  /* v3.31：ESC 分支里 pop-layer 等回收动作之后不许紧跟 exitPlugin ——
+     v4.4.0 起唯一允许的出口是「兜底关浮层失败之后」那一次（空栈才退） */
+  ok(!/if \(act === 'pop-layer'\)\s*\{\s*Esc\.handle\(\); return; \}[\s\S]{0,160}?exitPlugin\(\)/.test(app),
+    'pop-layer / clear-search / blur 各分支不直接退出，浮层永远快于关窗');
   ok(/setTimeout\(\(\) => \{\s*\n\s*if \(!alive\(\)\) return;\s*\n\s*try \{ if \(Bridge\.destroySelf\)/.test(app),
     '400ms 后还活着就 destroy（close 被拦住时的兜底）');
   ok(app.indexOf('window.close()') > -1 && app.indexOf('Bridge.closeSelf') > -1,
@@ -256,7 +254,8 @@ console.log('\n[10] 接线静态断言');
   ok(/function flushDrafts\(\)/.test(app), '退出前改为静默落盘 flushDrafts()');
   ok(/async function exitPlugin\(\)[\s\S]{0,300}?flushDrafts\(\);/.test(app),
     'exitPlugin 先保存草稿，不再 await 任何对话框');
-  ok(app.indexOf('escExitHint') > -1, '无层可关时给一句「退出请按 Ctrl+W」，不关窗口');
+  ok(!/escExitHint\s*\(/.test(app) && /closeVisibleOverlay\(\)\) return;[\s\S]{0,900}?exitPlugin\(\);/.test(app),
+    'v4.4.0：escExitHint 退役，空栈 ESC 走 exitPlugin() 关闭插件');
   ok(app.indexOf('ESC_VISIBLE_CLOSERS') > -1, '按真实可见性兜底关浮层');
   ok(app.indexOf('escFsPassed') > -1, '全屏状态只让一次，不会永久吞掉 ESC');
   ok(/window\.addEventListener\('keydown'/.test(app) && app.indexOf('__escSeen') > -1,

@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.3.6）
+# 功能自查对照表（v4.4.0）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -10,7 +10,7 @@
 | 🟡 | 实现点齐，但没有自动测试（多半是纯界面行为） |
 | ❌ | 找不到实现点（要修） |
 
-**合计 95 项：✅ 69 · 🟡 26 · ❌ 0**
+**合计 95 项：✅ 68 · 🟡 27 · ❌ 0**
 
 ## A. 打开与切换
 
@@ -32,7 +32,7 @@
 | ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 73 处 |
 | ✅ | 缩略图惰性渲染 | `js/app.js` | 13 处 |
 | ✅ | 目录 / 缩略图弹出面板（v4.1，原左栏） | `js/app.js` `css/app.css` | 5 处 |
-| ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 52 处 |
+| ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 56 处 |
 | 🟡 | 搜索临时标记不进 PDF | `css/app.css` `js/app.js` | — |
 | 🟡 | 内部链接翻页 / 外部链接三选一 | `js/app.js` | — |
 | ✅ | 明暗主题切换（记忆） | `js/store.js` `js/app.js` | 1 处 |
@@ -41,7 +41,7 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | 摘录文字（不弹笔记框） | `js/app.js` | 63 处 |
+| ✅ | 摘录文字（不弹笔记框） | `js/app.js` | 67 处 |
 | 🟡 | 摘录并笔记（直接开大笔记框） | `js/app.js` | — |
 | 🟡 | 复制（CJK 字间空格清洗） | `js/utils.js` | — |
 | 🟡 | 划词翻译（就近弹层） | `js/app.js` `js/translator.js` | — |
@@ -51,7 +51,7 @@
 | ✅ | 页面锚点（放下就开笔记框） | `js/app.js` | 2 处 |
 | ✅ | 跨页选区拆成多条 | `js/viewer.js` `js/app.js` | 1 处 |
 | ✅ | 五色色板 | `index.html` | 1 处 |
-| ✅ | 双击编辑备注 / Ctrl+Enter 保存 | `js/annotations.js` `js/editor.js` | 39 处 |
+| ✅ | 双击编辑备注 / Ctrl+Enter 保存 | `js/annotations.js` `js/editor.js` | 44 处 |
 | ✅ | 撤销（Ctrl+Z） | `js/undo.js` `js/app.js` | 21 处 |
 | 🟡 | 高亮写进 PDF 文件本身 | `js/pdfwrite.js` `js/app.js` | — |
 | 🟡 | 同步到 Eagle 条目注释 | `js/app.js` `js/bridge.js` | — |
@@ -75,7 +75,7 @@
 | --- | --- | --- | --- |
 | ✅ | 大笔记框（Markdown 实时预览） | `js/editor.js` `js/markdown.js` | 12 处 |
 | 🟡 | 笔记配图（拖入 / 粘贴） | `js/editor.js` | — |
-| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 36 处 |
+| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 37 处 |
 | 🟡 | 笔记可导出 | `js/exporter.js` `js/app.js` | — |
 
 ## F. 视频
@@ -100,7 +100,7 @@
 | 🟡 | 术语表（提升识别与翻译一致性） | `js/translator.js` `js/subtitle.js` | — |
 | ✅ | 专业领域词表（医学 / 生命科学） | `js/domainterms.js` `js/subtitle.js` | 3 处 |
 | ✅ | AI 总结双通道（本地 Ollama / 自定义 OpenAI 兼容） | `js/aisummary.js` | 34 处 |
-| ✅ | 双链笔记（[[书名]] 语法 + 出链索引 + 反链聚合 + 跳转） | `js/wikilink.js` `js/projection.js` `js/app.js` | 10 处 |
+| ✅ | 双链笔记（[[书名]] 语法 + 出链索引 + 反链聚合 + 跳转） | `js/wikilink.js` `js/projection.js` `js/app.js` | 13 处 |
 | ✅ | AI 回复 Markdown 渲染呈现（入库保存原始 md） | `js/aisummary.js` | 34 处 |
 | ✅ | 自定义 OpenAI 兼容接口（默认预填智谱免费档） | `js/aisummary.js` | 27 处 |
 | ✅ | 长文 map-reduce（超预算分页分段提炼再合并） | `js/aisummary.js` | 8 处 |
@@ -117,7 +117,7 @@
 | ✅ | 知识库卡片墙（可打开 / 溯源） | `js/workbench.js` | 13 处 |
 | ✅ | 「清除插件数据…」入口 | `index.html` `js/app.js` | 2 处 |
 | ✅ | Eagle 注释巡检（全库扫标记注释、官方 API 清空、不依赖索引） | `index.html` `js/app.js` | 7 处 |
-| ✅ | Ctrl+N 新建笔记（弹窗已开只聚焦不重置草稿） | `js/app.js` | 9 处 |
+| ✅ | Ctrl+N 新建笔记（弹窗已开只聚焦不重置草稿） | `js/app.js` | 12 处 |
 
 ## J. 知识库同步
 
@@ -134,12 +134,12 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | ESC 逐级退出（v3.31 起只收浮层，不关插件） | `js/esc.js` `js/escguard.js` | 78 处 |
-| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 78 处 |
+| ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 81 处 |
+| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 81 处 |
 | ✅ | ESC 真能关窗（IPC close→destroy） | `js/bridge.js` | 17 处 |
 | ✅ | 关不掉时常驻横幅 + 再试/最小化 | `js/app.js` `css/app.css` | 1 处 |
-| ✅ | ESC 无层可关时提示「退出请按 Ctrl+W」 | `js/app.js` | 4 处 |
-| ✅ | Ctrl+W 关闭 | `js/app.js` | 13 处 |
+| 🟡 | ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役） | `js/app.js` | — |
+| ✅ | Ctrl+W 关闭 | `js/app.js` | 14 处 |
 | 🟡 | 预览模式紧凑布局（mode-preview） | `css/app.css` | — |
 | 🟡 | 窗口底色跟随主题（不闪白） | `js/bridge.js` | — |
 | ✅ | 无边框窗口 + 自绘标题栏 | `js/framewin.js` `js/app.js` | 20 处 |
@@ -189,6 +189,7 @@
 * OCR（视觉模型 / 状态可见）
 * 术语表（提升识别与翻译一致性）
 * 首次启动环境检查（缺什么说清楚）
+* ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役）
 * 预览模式紧凑布局（mode-preview）
 * 窗口底色跟随主题（不闪白）
 * 每篇一份 docs/<id>.json

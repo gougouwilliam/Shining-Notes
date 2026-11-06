@@ -10,30 +10,28 @@
 (function (global) {
   'use strict';
 
-  /* 逐级退出的优先级（v3.31：ESC 永不关窗口）：
+  /* 逐级退出的优先级（v4.4.0：ESC 最后一级 = 关闭插件）：
    *   1) 有浮层 → 弹栈顶（后开的先关）。
    *   2) 搜索框有字 → 只清搜索。
    *   3) 正在输入 → 失焦（留给输入法）。
-   *   4) 其余 → noop：什么都不做，只提示「退出请按 Ctrl+W」。
+   *   4) 其余 → exit-plugin：关掉插件窗口（与顶栏 ✕ / Ctrl+W 同一条出口）。
    *
-   * 为什么没有「退出插件」这一档
+   * 历史（v3.22 / v3.31 为什么删过这一档）
    * ────────────────────────────
-   * 用户实测两条：刚打开 PDF 按 ESC，Eagle 界面一起没了；另存为弹不出来，
-   * 想按 ESC 把那个框关掉，结果又把 Eagle 退了一次。
-   * 根子不在哪一次判断写错，而在「ESC 关窗口」这条规则本身 —— 它当时被**三处**
-   * 兜底叠着：① 这里返回 exit-plugin；② app.js 里「连按两次没进展就强退」；
-   * ③ index.html 里一段独立脚本，900ms 内没被认领就自己调 IPC 关窗。
-   * 任何一处判偏，一次「想关个框」的 ESC 就变成了「退出插件」。
-   * 所以这一档整条拿掉：ESC 只往回收，退出统一走 Ctrl+W（明确、不会被误触）。
-   * 当初为兜底写的 isRepeat（连按两次判据）与 canSelfClosePreview 一并删除 ——
-   * 没人调用、只被测试养着的函数，留着就是下一次误判的种子。
-   */
+   * 当年「ESC 关窗口」被**三处**兜底叠着：① 这里返回 exit-plugin；② app.js 里
+   * 「连按两次没进展就强退」；③ index.html 一段独立脚本 900ms 没被认领就 IPC 关窗。
+   * 任何一处判偏，一次「想关个框」的 ESC 就变成「退出插件」（连 Eagle 一起收走的
+   * 事故也出过）。所以 v3.22 把这一档整条拿掉，ESC 只往回收。
+   * v4.4.0 用户明确要求恢复「ESC 关闭插件」。恢复的前提是三个兜底只剩一个：
+   * ②③ 已删，决策点只有这里的 escapeAction，且 app.js 对 ESC **无条件**
+   * preventDefault + stopPropagation（事件绝不会漏给 Eagle 宿主）。
+   * 于是 noop 这一档重新变成明确的 exit-plugin——单一决策点，行为可测。 */
   function escapeAction(env) {
     env = env || {};
     if (env.depth > 0) return 'pop-layer';
     if (env.searchActive) return 'clear-search';
     if (env.typing) return 'blur';
-    return 'noop';
+    return 'exit-plugin';
   }
 
   const mod = { escapeAction };

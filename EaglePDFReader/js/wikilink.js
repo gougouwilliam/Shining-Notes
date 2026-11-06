@@ -90,6 +90,16 @@ const WikiLink = (function () {
     return t.length > 60 ? t.slice(0, 59).trim() + '…' : t;
   }
 
+  /* v4.4.0：笔记的「锚标题」= 正文第一行原样（不剥记号、不截断）。
+     投影 md 里每条笔记的 #### 标题头用的就是它（v4.3.6 起）——
+     Obsidian 的 [[书#标题]] 只认标题原文，候选/插入/manifest 必须与标题头
+     完全同源，否则 OB 里只能跳到文件、定位不到那条笔记。
+     noteTitle（剥壳截断版）仍用于 UI 显示与反链摘录，别混用。 */
+  function noteAnchorTitle(md) {
+    const first = String(md == null ? '' : md).split(/\r?\n/).find((l) => String(l).trim()) || '';
+    return first.trim();
+  }
+
   /* 上下文摘录：文本里所有指向 target 的链接，各取前后 snippet 个字符。
      返回 [{ before, after }]（已剥掉 [[ ]] 语法本身）。反向链接面板用。
      v4.2：笔记级链接 [[书#笔记]] 也算指向「书」—— 按书名段匹配。 */
@@ -113,7 +123,7 @@ const WikiLink = (function () {
     return out;
   }
 
-  return { RE, parseLinks, distinctTargets, linkContexts, normalize, stripCode, splitTarget, bookOf, noteTitle };
+  return { RE, parseLinks, distinctTargets, linkContexts, normalize, stripCode, splitTarget, bookOf, noteTitle, noteAnchorTitle };
 })();
 
 try { window.WikiLink = WikiLink; } catch (e) { /* vm 沙箱里没有 window */ }

@@ -175,6 +175,7 @@ const Projection = (function () {
       '| 每个 `<!-- eagle:ex:… -->` 块 | 一条摘录（引用原文 + 你的批注） |',
       '| 每个 `<!-- eagle:nt:… -->` 块 | 一条笔记 |',
       '| `<!-- eagle:ec:… -->` 区块 | Eagle 注释栏（双向同步，两边改都行） |',
+      '| `> [!quote]- …` 折叠块 | 摘录/笔记的原文（Obsidian 里点标题展开；不可改，改了会被还原） |',
       '',
       '## 可以手改，但要守两条规矩',
       '',
@@ -537,8 +538,14 @@ const Projection = (function () {
   /* YAML 标量：JSON 字符串本身就是合法的双引号 YAML 标量，中文不用额外处理 */
   function yamlStr(s) { return JSON.stringify(String(s == null ? '' : s)); }
 
-  function quoteBlock(text) {
-    return String(text || '').split(/\r?\n/).map((l) => '> ' + l).join('\n');
+  /* v4.4.0：原文用 Obsidian callout 呈现 —— 折叠的引用框，标题带类型·颜色标签，
+     阅读视图里摘录和笔记一眼可分（点标题展开原文）。每行都以 > 起头，
+     回读层（noteOfEx / bodyOfNt）把 > 行剥掉，回读口径零变化；
+     Typora / VSCode 不认 callout，退化为普通引用块（多一行标注文字），不影响阅读。 */
+  function quoteCallout(text, title) {
+    return ['> [!quote]- ' + String(title || '原文')]
+      .concat(String(text || '').split(/\r?\n/).map((l) => '> ' + l))
+      .join('\n');
   }
 
   function pluginVersion() {
@@ -715,7 +722,7 @@ const Projection = (function () {
           lastHead = head;
         }
         if (String(a.text || '').trim()) {
-          L.push(quoteBlock(a.text));
+          L.push(quoteCallout(a.text, label || '原文'));
           L.push('');
         }
         if (a.image || a.imagePath) {
@@ -764,7 +771,7 @@ const Projection = (function () {
         }
         L.push('');
         if (String(n.quote || '').trim()) {
-          L.push(quoteBlock(n.quote));
+          L.push(quoteCallout(n.quote, '原文'));
           L.push('');
         }
         if (mdText) {
@@ -1376,18 +1383,20 @@ const Projection = (function () {
        不写回文件——否则 A 引 B、B 引 A 会互相触发重写）。 */
     const myTitle = safeName(U.stripExt((meta && meta.name) || (data && data.fileName) || ''));
     const outLinks = WL.distinctTargets(out.text, myTitle);
-    /* v4.2 笔记级双链：把笔记标题（正文第一行口径，见 WikiLink.noteTitle）
-       一并记进 manifest，补全候选不用为每次按键翻全部 docs。 */
+    /* v4.2 笔记级双链：笔记标题记进 manifest，补全候选不用为每次按键翻全部 docs。
+       v4.4.0：口径改成 noteAnchorTitle（正文第一行原样）—— 投影 md 的 #### 标题头
+       用的就是原始第一行，候选/插入必须与标题头完全同源，OB 里 [[书#标题]]
+       才能精确跳到那条笔记（noteTitle 的剥壳截断版对不上 OB 标题）。 */
     const noteTitles = (function () {
       const out = [];
       const anns2 = (data && Array.isArray(data.annotations)) ? data.annotations : [];
       const notes2 = (data && Array.isArray(data.notes)) ? data.notes : [];
       anns2.forEach((a) => {
-        const t = WL.noteTitle(a.note);
+        const t = WL.noteAnchorTitle ? WL.noteAnchorTitle(a.note) : WL.noteTitle(a.note);
         if (t) out.push(t);
       });
       notes2.forEach((n) => {
-        const t = WL.noteTitle(n.md);
+        const t = WL.noteAnchorTitle ? WL.noteAnchorTitle(n.md) : WL.noteTitle(n.md);
         if (t) out.push(t);
       });
       return out;
@@ -1498,7 +1507,8 @@ const Projection = (function () {
     linkContexts: () => [],
     splitTarget: (t) => ({ book: String(t || '').trim(), note: '' }),
     bookOf: (t) => String(t || '').trim(),
-    noteTitle: () => ''
+    noteTitle: () => '',
+    noteAnchorTitle: () => ''
   };
 
   /* 老 manifest 条目没有 links 字段 → 惰性读盘补算一次（缓存进 rec，不落 manifest 文件） */
@@ -1588,11 +1598,11 @@ const Projection = (function () {
         if (!raw) return;
         const out = [];
         (Array.isArray(raw.annotations) ? raw.annotations : []).forEach((a) => {
-          const t = WL.noteTitle(a.note);
+          const t = (WL.noteAnchorTitle || WL.noteTitle)(a.note);
           if (t) out.push(t);
         });
         (Array.isArray(raw.notes) ? raw.notes : []).forEach((n) => {
-          const t = WL.noteTitle(n.md);
+          const t = (WL.noteAnchorTitle || WL.noteTitle)(n.md);
           if (t) out.push(t);
         });
         const iid = String(raw.itemId || k);

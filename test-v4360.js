@@ -114,9 +114,9 @@ console.log('—— ⑤ 版本号与文档 ——');
 const M1 = JSON.parse(read('EaglePDFReader/manifest.json'));
 const M2 = JSON.parse(read('EagleNoteWorkbench/manifest.json'));
 ok(M1.version === M2.version && /^\d+\.\d+\.\d+$/.test(M1.version), '双插件版本号一致且三段式');
-ok(M1.version === '4.3.6', '版本号推进到 4.3.6');
+ok(/^\d+\.\d+\.\d+$/.test(M1.version), '版本号三段式（不随版本追改）');
 const RD = read('EaglePDFReader/README.md');
-ok(/当前版本 \*\*4\.3\.6\*\*/.test(RD), 'README 当前版本 4.3.6');
+ok(/当前版本 \*\*\d+\.\d+\.\d+\*\*/.test(RD), 'README 当前版本为三段式');
 ok(/更新记录 · 4\.3\.6（双链在 Obsidian 里可用）/.test(RD), 'README 有 4.3.6 更新记录小节');
 
 console.log('\n====');
