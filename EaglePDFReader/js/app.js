@@ -5,6 +5,15 @@
   const $ = U.$;
   const $$ = U.$$;
 
+  /* v4.4.4：退出流程的两个模块级句柄。
+     ① detachUnloadPersist —— beforeunload 监听器的摘钩函数。页面只要还挂着
+        beforeunload，用户点过一下（sticky activation）之后 Chromium 就会
+        拦下脚本发起的 window.close()；退出前必须先摘掉它。
+     ② exitSentAt —— 连按 ESC 的防抖时间戳，避免对主进程重复发 close/destroy
+        （现场 debug.log 里一秒能按出五六下）。 */
+  let detachUnloadPersist = null;
+  let exitSentAt = 0;
+
   const state = {
     item: null,
     doc: null,
@@ -722,7 +731,17 @@
     }, true);
 
     bindDropZone();
-    window.addEventListener('beforeunload', () => { persist(true); });
+    /* v4.4.4：改成具名监听并留下摘钩句柄。原来那个匿名函数没法移除，
+       而只要它还挂着，用户点过页面之后 window.close() 就会被 Chromium
+       拦住（「不操作能退出、点一下就失效」）。exitPlugin 里已先
+       flushDrafts + persist(true)，摘钩不会丢数据；用户点 Eagle 自己的 ✕
+       退出时这条监听仍在，照常 persist。 */
+    const onUnloadPersist = () => { persist(true); };
+    window.addEventListener('beforeunload', onUnloadPersist);
+    detachUnloadPersist = () => {
+      try { window.removeEventListener('beforeunload', onUnloadPersist); } catch (e) { /* ignore */ }
+      detachUnloadPersist = null;
+    };
 
     // Markdown 里的外链交给系统浏览器
     // v4.2：双链 a.wikilink 也是 .md-body 里的 <a>，但它的跳转由 document 级
@@ -6492,6 +6511,10 @@
 
     try { flushDrafts(); } catch (e) { console.warn('[exit] 保存草稿失败', e); }
     try { persist(true); } catch (e) { console.warn('[exit] 保存失败', e); }
+    /* v4.4.4：数据已落盘，摘掉自己注册的 beforeunload。留着它，Chromium
+       会在用户点击过页面之后拦下 window.close()（sticky activation 规则）。
+       只摘我们自己这一条，不影响 Eagle 宿主自己的卸载逻辑。 */
+    try { if (detachUnloadPersist) detachUnloadPersist(); } catch (e) { /* ignore */ }
     /* 退出前把还没发出去的注释同步立刻发一次（debounce 还压着的那一次）。
        不 await —— 关窗不能被一次 IPC 拖住；写不进去下次打开会对账补上。 */
     try { syncLater.cancel(); syncNotesToEagle(true); } catch (e) { /* ignore */ }
@@ -6512,23 +6535,44 @@
       if (Bridge.windowIdentity) dbg('exit.env', Bridge.windowIdentity());
     } catch (e) { dbg('exit.guard.err', e); }
 
-    /* v4.4.3：预览窗口其实是独立 BrowserWindow（Eagle app.asar 的 openPreview
-       用 new BrowserWindow，dom-ready 注入 windowID ≠ parentID）。
-       现场预览窗口里 @electron/remote 拿不到 selfId，守卫于是把 remote / IPC
-       那条路封死（allow=false）—— 这是对的，那条路可能指回主窗口。
-       但 window.close() 只作用于**当前窗口**，绝不会碰 Eagle 主界面，
-       所以单独放行这一条：关掉预览窗口 = 用户要的「ESC 退出插件」。
-       全程不调用 closeSelf / destroySelf / ipcWindow，也不抢焦点。 */
+    /* v4.4.4：预览窗口 ESC 的最终出口 —— 主进程按 sender 定向关窗。
+       v4.4.3 只发 window.close()，实测「不操作 / 只滚轮能退出，点一下就失效」：
+       页面注册的 beforeunload + 点击产生的 sticky activation 会让 Chromium
+       拦下脚本关窗（现场 00:25 之后成片的 exit.selfclose 就是「按了没关掉」）。
+       现在的组合是：
+         ① 本函数开头已摘掉自己的 beforeunload 监听；
+         ② Bridge.closeCurrent('close') 走主进程 IPC，sender 天然指向本窗口；
+         ③ window.close() 降级为 renderer 兜底；
+         ④ 320ms 还活着就 closeCurrent('destroy') 强制销毁（绕过一切拦截）；
+         ⑤ 900ms 还活着才提示，并把现场裁决记进 debug.log。
+       closeCurrent 内部有 closeVerdict 的 allow / allowSenderClose 双闸门：
+       Eagle 主窗口、browser、身份不明形态一律拒绝，绝不重演「一起最小化」。
+       全程不调用 closeSelf / destroySelf（它们依赖 remote，且可能指回主窗口）。 */
     if (!verdict.allow && verdict.allowWindowClose) {
+      const now = Date.now();
+      /* 连按 ESC 只发一轮关窗请求；1.2s 后可重试（兜底提示出现后仍按得动） */
+      if (now - exitSentAt < 1200) { exiting = false; return; }
+      exitSentAt = now;
       dbg('exit.selfclose', verdict);
       try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
+      let sentIpc = false;
+      try { sentIpc = !!(Bridge.closeCurrent && Bridge.closeCurrent('close')); } catch (e) { /* ignore */ }
+      dbg('exit.senderclose', { sent: sentIpc, allowSenderClose: !!verdict.allowSenderClose });
       try { window.close(); } catch (e) { /* ignore */ }
       [120, 420].forEach((ms) => setTimeout(() => {
         try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
       }, ms));
-      /* Electron 个别版本会静默拒绝脚本关窗：留一句可执行的兜底提示 */
+      /* 主进程 close 被拦（宿主策略 / beforeunload）时的硬兜底 */
       setTimeout(() => {
         if (!alive()) return;
+        let destroyed = false;
+        try { destroyed = !!(Bridge.closeCurrent && Bridge.closeCurrent('destroy')); } catch (e) { /* ignore */ }
+        dbg('exit.senderdestroy', { sent: destroyed });
+      }, 320);
+      /* 极个别环境连 IPC 都不可用：留一句可执行的兜底提示 */
+      setTimeout(() => {
+        if (!alive()) return;
+        dbg('exit.stillalive', { sentIpc: sentIpc, allowSenderClose: !!verdict.allowSenderClose });
         U.toast('窗口未关闭，请按空格或点 Eagle 的返回退出预览', '', 3200);
       }, 900);
       exiting = false;

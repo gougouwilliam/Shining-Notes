@@ -796,7 +796,10 @@ const Bridge = (function () {
       const el = require('electron') || {};
       const ipc = el.ipcRenderer;
       if (!ipc || typeof ipc.invoke !== 'function') return false;
-      ipc.invoke('plugin.window.', { method: method, value: undefined });
+      const pending = ipc.invoke('plugin.window.', { method: method, value: undefined });
+      /* v4.4.4：invoke 返回 Promise，主进程拒绝 / 窗口已销毁时会 reject。
+         不吞掉就是一条 UnhandledPromiseRejection，关窗这种高压路径不能再添噪声。 */
+      if (pending && typeof pending.catch === 'function') pending.catch(() => {});
       return true;
     } catch (e) { return false; }
   }
@@ -943,6 +946,33 @@ const Bridge = (function () {
       } catch (e) { /* 落到 IPC */ }
     }
     return ipcWindow('destroy');
+  }
+
+  /* v4.4.4：按 sender 定向关窗 —— 预览窗口里 ESC 的最终出口
+     ────────────────────────────────────────────────────
+     closeSelf() / destroySelf() 先走 remote.getCurrentWindow()，而预览窗口里
+     @electron/remote 拿不到窗口对象（现场 exit.env 的 selfId 恒为 null），
+     守卫因此把这条通道整个封死了。
+     ipcRenderer.invoke('plugin.window.', …) 不依赖 remote：Eagle 主进程用
+     BrowserWindow.fromWebContents(event.sender) 定位，作用对象只能是发出
+     这条消息的 renderer 所在的窗口。现场 [env] {"ipc":true,"bw":"max"}
+     已证明通道可用且指向正确（isMaximized 返回 true 的是预览窗口本身）。
+
+     与 window.close() 的关键差别：这是**主进程**发起的关闭，destroy 更是
+     无条件销毁，不受 renderer 的 beforeunload / sticky activation 限制 ——
+     页面被点击过后，Chromium 会拦下脚本发起的 window.close()（见 winguard
+     头注释），这正是「不操作能退出、点一下就失效」的根因。
+
+     安全边界：必须拿到 closeVerdict 的 allow 或 allowSenderClose。后者只在
+     windowID≠parentID（独立预览窗口）或独立 window 形态时为真；主窗口、
+     browser、身份不明形态一律拒绝，绝不重演「ESC 把 Eagle 收进托盘」。 */
+  function closeCurrent(method) {
+    const v = closeVerdict();
+    if (!v.allow && !v.allowSenderClose) {
+      try { if (typeof Dbg !== 'undefined') Dbg.log('exit.senderclose.deny', v.code); } catch (e) { /* ignore */ }
+      return false;
+    }
+    return ipcWindow(method === 'destroy' ? 'destroy' : 'close');
   }
 
   /* 把 dataURL 图片写入系统剪贴板（Electron 的 clipboard 比 navigator.clipboard 可靠） */
@@ -1094,6 +1124,7 @@ const Bridge = (function () {
     closeWindow,
     closeSelf,
     destroySelf,
+    closeCurrent,
     focusParent,
     closeVerdict,
     windowIdentity,

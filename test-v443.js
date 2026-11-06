@@ -118,7 +118,7 @@ ok(/allowWindowClose/.test(WG_SRC) && /两级许可/.test(WG_SRC), '注释说明
 ok(HTML.indexOf('js/winguard.js') > 0 && HTML.indexOf('js/winguard.js') < HTML.indexOf('js/bridge.js'),
   'winguard.js 仍在 bridge.js 之前加载');
 
-console.log('—— ⑦ exitPlugin：新分支只 window.close，绝不碰 remote ——');
+console.log('—— ⑦ exitPlugin：预览分支走 sender 定向关窗，不碰 remote ——');
 {
   const i = APP.indexOf('async function exitPlugin()');
   const j = APP.indexOf('let verdict = { allow: true, allowWindowClose: true', i);
@@ -127,10 +127,11 @@ console.log('—— ⑦ exitPlugin：新分支只 window.close，绝不碰 remot
   const end = APP.indexOf('exiting = false;\n      return;', k);
   ok(i > 0 && j > i && k > j && end > k && denyAt > end, '能定位到新分支与旧拒绝分支（新分支在前）');
   const seg = APP.slice(k, end);
-  ok(/window\.close\(\)/.test(seg), '新分支调用 window.close() 关自己的窗口');
-  ok(seg.indexOf('closeSelf') < 0 && seg.indexOf('destroySelf') < 0 &&
-     seg.indexOf('ipcWindow') < 0 && seg.indexOf('destroy()') < 0,
-    '新分支没有任何 remote / IPC / destroy 调用');
+  ok(/window\.close\(\)/.test(seg), 'window.close() 仍作 renderer 兜底');
+  ok(!/Bridge\.(closeSelf|destroySelf)\(/.test(seg) && !/\.destroy\(\)/.test(seg),
+    '不直接调 remote 的 closeSelf / destroySelf（v4.4.4 改走 sender 定向通道）');
+  ok(/Bridge\.closeCurrent\('close'\)/.test(seg) && /Bridge\.closeCurrent\('destroy'\)/.test(seg),
+    '主路径是主进程按 sender 定向的 close，320ms 兜底 destroy');
   ok(/Bridge\.focusParent\(\{ focus: false \}\)/.test(seg), '只 restore/show 宿主，不抢焦点');
   ok(/\[120, 420\]\.forEach/.test(seg), '120/420ms 两次补恢复');
   ok(/窗口未关闭，请按空格或点 Eagle 的返回退出预览/.test(seg), '脚本关窗被拒时有可执行兜底提示');
@@ -159,10 +160,10 @@ ok(/e\.preventDefault\(\);\s*\n\s*e\.stopPropagation\(\);/.test(
 console.log('—— ⑨ 版本与文档 ——');
 const M1 = JSON.parse(read('EaglePDFReader/manifest.json'));
 const M2 = JSON.parse(read('EagleNoteWorkbench/manifest.json'));
-ok(M1.version === '4.4.3' && M2.version === '4.4.3', '双插件版本同为 4.4.3');
-ok(M1.version === M2.version && /^\d+\.\d+\.\d+$/.test(M1.version), '版本一致且三段式');
-ok(/当前版本 \*\*4\.4\.3\*\*/.test(RD), 'README 当前版本 4.4.3');
-ok(/更新记录 · 4\.4\.3（修复/.test(RD), 'README 有 4.4.3 更新记录小节');
+ok(M1.version === M2.version && /^\d+\.\d+\.\d+$/.test(M1.version),
+  '双插件版本一致且三段式（升版不追改旧套件）');
+ok(/当前版本 \*\*\d+\.\d+\.\d+\*\*/.test(RD), 'README 当前版本为三段式');
+ok(/更新记录 · 4\.4\.3（修复/.test(RD), 'README 保留 4.4.3 历史更新记录小节');
 ok(/更新记录 · 4\.4\.2（Eagle 删除条目后/.test(RD), '4.4.2 历史小节保留');
 
 console.log('\n====');

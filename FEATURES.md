@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.4.3）
+# 功能自查对照表（v4.4.4）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -10,7 +10,7 @@
 | 🟡 | 实现点齐，但没有自动测试（多半是纯界面行为） |
 | ❌ | 找不到实现点（要修） |
 
-**合计 101 项：✅ 72 · 🟡 29 · ❌ 0**
+**合计 103 项：✅ 72 · 🟡 31 · ❌ 0**
 
 ## A. 打开与切换
 
@@ -32,7 +32,7 @@
 | ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 73 处 |
 | ✅ | 缩略图惰性渲染 | `js/app.js` | 13 处 |
 | ✅ | 目录 / 缩略图弹出面板（v4.1，原左栏） | `js/app.js` `css/app.css` | 5 处 |
-| ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 60 处 |
+| ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 62 处 |
 | 🟡 | 搜索临时标记不进 PDF | `css/app.css` `js/app.js` | — |
 | 🟡 | 内部链接翻页 / 外部链接三选一 | `js/app.js` | — |
 | ✅ | 明暗主题切换（记忆） | `js/store.js` `js/app.js` | 1 处 |
@@ -136,15 +136,17 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 85 处 |
-| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 85 处 |
-| ✅ | ESC 真能关窗（IPC close→destroy） | `js/bridge.js` | 23 处 |
+| ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 87 处 |
+| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 87 处 |
+| ✅ | ESC 真能关窗（IPC close→destroy） | `js/bridge.js` | 25 处 |
 | ✅ | 关不掉时常驻横幅 + 再试/最小化 | `js/app.js` `css/app.css` | 1 处 |
 | 🟡 | ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役） | `js/app.js` | — |
 | ✅ | v4.4.1 关窗身份守卫：绝不把 close/destroy 施加到 Eagle 主窗口 | `js/winguard.js` `js/bridge.js` `js/app.js` | 1 处 |
 | ✅ | v4.4.1 宿主恢复兜底：只 restore/show，不 minimize/hide | `js/bridge.js` `js/app.js` | 12 处 |
 | 🟡 | v4.4.3 两级许可：预览窗口 windowID≠parentID 时放行 window.close、仍封死 remote | `js/winguard.js` `js/app.js` | — |
 | 🟡 | v4.4.3 现场诊断：debug.log 补记 windowIdentity 全字段与 selfclose 决策 | `js/app.js` | — |
+| 🟡 | v4.4.4 第三级许可：独立预览窗口才允许主进程按 sender 定向 close/destroy | `js/winguard.js` `js/bridge.js` `js/app.js` | — |
+| 🟡 | v4.4.4 退出前摘掉 beforeunload，点击后 window.close 不再被拦 | `js/app.js` | — |
 | ✅ | Ctrl+W 关闭 | `js/app.js` | 14 处 |
 | 🟡 | 预览模式紧凑布局（mode-preview） | `css/app.css` | — |
 | 🟡 | 窗口底色跟随主题（不闪白） | `js/bridge.js` | — |
@@ -198,6 +200,8 @@
 * ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役）
 * v4.4.3 两级许可：预览窗口 windowID≠parentID 时放行 window.close、仍封死 remote
 * v4.4.3 现场诊断：debug.log 补记 windowIdentity 全字段与 selfclose 决策
+* v4.4.4 第三级许可：独立预览窗口才允许主进程按 sender 定向 close/destroy
+* v4.4.4 退出前摘掉 beforeunload，点击后 window.close 不再被拦
 * 预览模式紧凑布局（mode-preview）
 * 窗口底色跟随主题（不闪白）
 * 每篇一份 docs/<id>.json

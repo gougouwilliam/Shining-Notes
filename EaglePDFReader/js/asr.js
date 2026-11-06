@@ -322,15 +322,15 @@ const Asr = (function () {
     const names = [PKG_JS, platformPkg()];
     for (const name of names) {
       const info = await pkgTarball(name);
-      if (onProgress) onProgress({ stage: 'engine', label: '正在下载识别引擎 · ' + name, got: 0, total: 0, pct: 0 });
+      if (typeof onProgress === 'function') onProgress({ stage: 'engine', label: '正在下载识别引擎 · ' + name, got: 0, total: 0, pct: 0 });
       const tgz = pathMod.join(ensureRoot(), name + '.tgz');
       await downloadAny([info.url], tgz, (got, total) => {
-        if (onProgress) onProgress({
+        if (typeof onProgress === 'function') onProgress({
           stage: 'engine', label: '正在下载识别引擎 · ' + name,
           got, total, pct: total ? Math.round(got / total * 100) : 0
         });
       });
-      if (onProgress) onProgress({ stage: 'engine', label: '正在解压识别引擎…', got: 1, total: 1, pct: 100 });
+      if (typeof onProgress === 'function') onProgress({ stage: 'engine', label: '正在解压识别引擎…', got: 1, total: 1, pct: 100 });
       const dest = pathMod.join(nm, name);
       rmrf(dest);
       fs.mkdirSync(dest, { recursive: true });
@@ -395,7 +395,7 @@ const Asr = (function () {
         if (!sizes[i]) sizes[i] = total;
         const sum = sizes.slice(0, i).reduce((a, b) => a + b, 0);
         const tot = sizes.every((s) => s > 0) ? sizes.reduce((a, b) => a + b, 0) : 0;
-        if (onProgress) onProgress({
+        if (typeof onProgress === 'function') onProgress({
           stage: 'model',
           label: '正在下载语音模型 · ' + (i + 1) + '/' + m.files.length,
           got: sum + got,
@@ -457,7 +457,7 @@ const Asr = (function () {
       fs.mkdirSync(modelDir(k), { recursive: true });
       await downloadAny(MIRRORS.map((b) => b + '/' + m.repo + '/resolve/main/' + m.bpe), dest,
         (got, total) => {
-          if (onProgress) onProgress({
+          if (typeof onProgress === 'function') onProgress({
             stage: 'hotword', label: '正在下载热词分词表…', got, total,
             pct: total ? Math.round(got / total * 100) : 0
           });
@@ -683,7 +683,9 @@ const Asr = (function () {
 
   async function ensureRefine(onProgress) {
     /* 兼容两种传参：裸函数（本文档约定）与 { onProgress } 对象（prepare 的样式）——
-       对象是真值，直接当函数调会炸「onProgress is not a function」，下载刚起步就崩（v4.3.5 修） */
+       对象是真值，直接当函数调会炸「onProgress is not a function」，下载刚起步就崩（v4.3.5 修）。
+       v4.4.4：其余非函数真值不在这里改写（保持 v4.3.5 契约），改由所有进度回调
+       调用点统一用 typeof === 'function' 判定 —— 对象/字符串/数字都不会被当函数调用。 */
     if (onProgress && typeof onProgress !== 'function' && typeof onProgress.onProgress === 'function') {
       onProgress = onProgress.onProgress;
     }
@@ -704,7 +706,7 @@ const Asr = (function () {
         if (!sizes[i]) sizes[i] = total;
         const sum = sizes.slice(0, i).reduce((a, b) => a + b, 0);
         const tot = sizes.every((s) => s > 0) ? sizes.reduce((a, b) => a + b, 0) : 0;
-        if (onProgress) onProgress({
+        if (typeof onProgress === 'function') onProgress({
           stage: 'refine',
           label: '正在下载精修模型 · ' + (i + 1) + '/' + m.files.length,
           got: sum + got,
@@ -1083,7 +1085,12 @@ const Asr = (function () {
 
   async function prepare(opts) {
     const o = opts || {};
-    const onProgress = o.onProgress;
+    let onProgress = o.onProgress;
+    /* v4.4.4：同 ensureRefine 的对象传参兼容；其它非函数真值由下面的
+       typeof 判定挡住，不会再出现「onProgress is not a function」 */
+    if (onProgress && typeof onProgress !== 'function' && typeof onProgress.onProgress === 'function') {
+      onProgress = onProgress.onProgress;
+    }
     state.loading = true;
     state.error = '';
     try {

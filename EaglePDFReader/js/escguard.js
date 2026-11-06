@@ -28,9 +28,17 @@
    * 于是 noop 这一档重新变成明确的 exit-plugin——单一决策点，行为可测。
    * v4.4.1：用户实测「ESC 连同 Eagle 一起最小化」。根因不在这个判定，而在
    * exitPlugin() 的关窗动作可能作用到 Eagle 主窗口（预览 webview 形态）。
-   * 于是把守卫下沉到关窗层（js/winguard.js + Bridge.closeVerdict）：
-   * ESC 仍返回 exit-plugin，但 exitPlugin 拿不到「自己是独立窗口」的证明时
-   * 一个窗口 API 都不碰，只提示。决策点依旧唯一，且多了一道身份闸门。 */
+ * 于是把守卫下沉到关窗层（js/winguard.js + Bridge.closeVerdict）：
+ * ESC 仍返回 exit-plugin，但 exitPlugin 拿不到「自己是独立窗口」的证明时
+ * 一个窗口 API 都不碰，只提示。决策点依旧唯一，且多了一道身份闸门。
+ *
+ * v4.4.4 结论（最终形态，别再改动本文件的决策）
+ * ────────────────────────────────────────────
+ * 预览是独立 BrowserWindow（windowID≠parentID），不是主窗口里的 webview。
+ * 这里的 escapeAction 保持 exit-plugin 不变；关窗可靠性全在 exitPlugin：
+ * 先摘 beforeunload，再走主进程按 sender 定向的 close/destroy。
+ * 之前「点过页面后 ESC 失效」是 window.close() 被 Chromium 的
+ * beforeunload + sticky activation 拦住，不是这里的分级判错。 */
   function escapeAction(env) {
     env = env || {};
     if (env.depth > 0) return 'pop-layer';

@@ -4,7 +4,20 @@
 3.3.0 起，摘录的高亮会**同步写进 PDF 文件本身**（换了阅读器也还在），顶栏是**常驻的全文搜索框**，并新增**视频笔记**。
 零外部依赖，全部资源（PDF.js、pdf-lib、CJK 字符映射、标准字体）随插件本地打包，**除划词翻译外不联网**。
 
-当前版本 **4.4.3**。
+当前版本 **4.4.4**。
+
+---
+
+## 更新记录 · 4.4.4（点击页面后 ESC 仍能稳定退出）
+
+- **用户实测**：通过插件打开文档，不操作或只用滚轮时按 ESC 能退出；鼠标点过一下之后再按 ESC 就退不出去。现场 `debug.log` 里 00:25 之后成片的 `exit.selfclose`，裁决恒为 `{allow:false, allowWindowClose:true, code:'no-self-id'}`，窗口身份 `mode=preview / parentID=2 / windowID=8`。
+- **根因**：`app.js` 在 `window` 上挂了 `beforeunload`（退出时 `persist`）。Chromium 规定：页面存在 `beforeunload` 监听器、且用户已产生 sticky activation（鼠标点击、键盘输入）时，脚本发起的 `window.close()` 会被拦下等待确认 / 静默拒绝；滚轮滚动不产生 activation，所以「不操作时能退、点一下就退不了」。v4.4.3 恰好把 `window.close()` 留成了唯一出口。顺带更正 4.4.3 小节里「刚打开时 ESC 由宿主退出」的推测——现场证明 ESC 一直由插件吞掉处理，差别只在脚本关窗是否被放行。
+- **修复① 摘钩**（`app.js`）：`beforeunload` 改成具名监听并留下摘钩句柄；`exitPlugin()` 先 `flushDrafts` + `persist(true)` 落盘，再摘掉监听，关窗时 renderer 层已无任何 `beforeunload`。用户点 Eagle 自己的 ✕ 退出时监听仍在，照常保存。
+- **修复② 主进程按 sender 定向关窗**（`bridge.js`）：新增 `Bridge.closeCurrent('close' | 'destroy')`，走 `ipcRenderer.invoke('plugin.window.', …)`；Eagle 主进程用 `BrowserWindow.fromWebContents(event.sender)` 定位，作用对象只能是发出消息的窗口，`destroy()` 更是无条件绕过 renderer 的 `beforeunload`。现场 `[env] {"ipc":true,"bw":"max"}` 已证明这条通道在预览窗口可用且指向正确。
+- **修复③ 第三级许可**（`winguard.js`）：新增 `allowSenderClose`，证据比 `allowWindowClose` 更严 —— 只有 `windowID≠parentID`（Eagle 明确注入的独立预览窗口）或 `parentID/windowID` 全无的独立 `window` 形态才放行；`windowID===parentID`、`flagged-host`、`browser`、`unknown-mode`，以及「有 parentID 却拿不到 windowID」的身份不明形态一律零窗口操作。`allow` / `allowWindowClose` / `code` 取值不变，旧裁决契约保持。
+- **修复④ 序列与诊断**（`app.js`）：预览分支 = 摘钩 → `closeCurrent('close')` → `window.close()` 兜底 → 120/420ms restore/show 宿主 → 320ms 仍活则 `closeCurrent('destroy')` → 900ms 仍活才提示。连按 ESC 加 1.2s 防抖，不再对主进程重复发请求；`debug.log` 增记 `exit.senderclose` / `exit.senderdestroy` / `exit.stillalive`。全程不调 `closeSelf` / `destroySelf`（依赖 remote，且可能指回主窗口）。
+- **顺手修**：日志里反复出现的 `Uncaught TypeError: onProgress is not a function @ asr.js` —— v4.3.5 已修过调用方传参，本版再把 `asr.js` 所有进度回调调用点统一成 `typeof onProgress === 'function'` 判定，`prepare()` 入口也做归一，任何非函数真值都不会再被当函数调用（v4.3.5 的归一化契约不变）。
+- 安全边界不变：绝不把 `close` / `destroy` 施加到 Eagle 主窗口；ESC 仍无条件吞掉，浮层 / 搜索 / 输入的优先级不变；不动投影 / 数据 / 模型。
 
 ---
 
