@@ -129,7 +129,7 @@ const M1 = JSON.parse(read('EaglePDFReader/manifest.json'));
 const M2 = JSON.parse(read('EagleNoteWorkbench/manifest.json'));
 ok(M1.version === M2.version && /^\d+\.\d+\.\d+$/.test(M1.version), '双插件版本一致且三段式（' + M1.version + '）');
 const RD = read('EaglePDFReader/README.md');
-ok(/当前版本 \*\*4\.4\.1\*\*/.test(RD), 'README 当前版本 4.4.1');
+ok(/当前版本 \*\*\d+\.\d+\.\d+\*\*/.test(RD), 'README 当前版本为三段式（不随版本追改）');
 ok(/更新记录 · 4\.4\.1（修复 ESC 连带 Eagle 一起最小化）/.test(RD), 'README 有 4.4.1 更新记录');
 ok(/winguard\.js/.test(RD) && /canSelfClosePreview/.test(RD), 'README 记录了守卫与历史回归点');
 

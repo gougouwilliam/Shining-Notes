@@ -43,6 +43,11 @@ const Projection = (function () {
   const ROOT_KEY = 'eaglenote:mdroot';        // 用户自定义知识库根
   const HUB_NAME = 'Notes Collection from Eagle';
   const HAND = '## 手记（不会被插件覆盖）';
+  /* v4.4.2：Eagle 已删条目的「墓碑」与 md 回收备份。
+     两者都放在 root 的父目录（<库>\.eaglenote\，vault 之外），Obsidian 不索引，
+     也不会变成用户看不懂的 .orphan-*.md。 */
+  const TOMBFILE = '.eaglenote-deleted.json';
+  const BACKUP_DIR = 'deleted-md';
   const WRITE_DELAY = 2600;                   // 打字停 2.6s 才落盘，别把同步盘写爆
   const EC_LOCAL_TTL = 15000;                 // 写回 Eagle 注释后，容忍 metadata.json 迟迟不落盘的窗口
 
@@ -57,6 +62,7 @@ const Projection = (function () {
   let libTimer = null;
   let manifestDirty = false;
   let manifestTimer = null;
+  let tombs = null;              // v4.4.2：已回收条目 id -> { at, file, backup }（惰性读盘）
   let timer = null;
   let pending = null;
   let lastError = null;
@@ -176,6 +182,7 @@ const Projection = (function () {
       '| 每个 `<!-- eagle:nt:… -->` 块 | 一条笔记 |',
       '| `<!-- eagle:ec:… -->` 区块 | Eagle 注释栏（双向同步，两边改都行） |',
       '| `> [!quote]- …` 折叠块 | 摘录/笔记的原文（Obsidian 里点标题展开；不可改，改了会被还原） |',
+      '| Eagle 里删除条目 | 对应 md 自动回收；原件备份在 `<库>\\.eaglenote\\deleted-md\\`（vault 外，OB 不显示） |',
       '',
       '## 可以手改，但要守两条规矩',
       '',
@@ -392,6 +399,7 @@ const Projection = (function () {
     root = next;
     manifest = {};
     libMap = {};
+    tombs = null;               // v4.4.2：换库必须重读墓碑，别把 A 库的裁决带到 B 库
     libDirty = false;
     if (!node || !root) return false;
     try {
@@ -1310,6 +1318,9 @@ const Projection = (function () {
   function writeNow(meta, data, force) {
     if (!isOn() || !meta || !data) return { ok: false, skipped: true };
     const id = keyOf(meta, data);
+    /* v4.4.2：Eagle 里已删、投影也已回收的条目，不许 rebuildAll / 空闲回读
+       再把它写回 vault。条目恢复时 syncAliveIds 会解除墓碑。 */
+    if (isTombstoned(id)) return { ok: false, skipped: true, tombstoned: true };
     const prev = manifest[id] || {};
     /* v4.3.3：写之前先认领一遍 —— 用户可能刚在 OB 里把文件挪进/挪出文件夹，
        不认领就写会在老位置再长一份出来（重复文件）。内部带 3s 节流，
@@ -1719,6 +1730,161 @@ const Projection = (function () {
     return res;
   }
 
+  /* ---------- v4.4.2：Eagle 已删条目的投影回收（存在性对账） ----------
+     故障现场：用户在 Eagle 里删掉视频，vault 里那篇 md 却永远留着。
+     根因：rebuildAll / syncExternal 只遍历插件自己的 docs/*.json，从不反查
+     Eagle 里条目还在不在；而「只有 Eagle 注释、没有摘录/笔记」的条目压根没进
+     docs，连 rebuildAll 都看不见它，manifest 里那条记录就成了永远没人管的死账。
+
+     修复 = 官方 API 拉全库 id → 找孤儿 → 逐条 getById 复核 → 备份 → 回收 → 墓碑。
+     调用方（app.js）负责 API 与复核；这里只做纯文件层，保证可测。
+     安全约定：
+       · aliveIds 为空（API 失败/空库）时一律不产出候选，绝不误删；
+       · 原件先复制到 vault 外的 deleted-md/，备份失败就不碰原件；
+       · 墓碑拦住 writeNow，否则下次 rebuildAll 又把删掉的 md 写回来；
+       · 条目从 Eagle 回收站恢复时，对账自动解除墓碑，投影照常回来。 */
+  function tombPath() {
+    if (!root || !pathMod) return '';
+    return pathMod.join(pathMod.dirname(root), TOMBFILE);
+  }
+
+  function backupDirPath() {
+    if (!root || !pathMod) return '';
+    return pathMod.join(pathMod.dirname(root), BACKUP_DIR);
+  }
+
+  function readTombs() {
+    if (tombs) return tombs;
+    tombs = {};
+    try {
+      const f = tombPath();
+      if (f && fs.existsSync(f)) {
+        const raw = JSON.parse(fs.readFileSync(f, 'utf8'));
+        if (raw && typeof raw === 'object') tombs = raw;
+      }
+    } catch (e) { tombs = {}; }
+    return tombs;
+  }
+
+  function writeTombs() {
+    const f = tombPath();
+    if (!f) return false;
+    try {
+      const tmp = f + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(readTombs()), 'utf8');
+      fs.renameSync(tmp, f);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function normId(x) {
+    const v = (x && typeof x === 'object' && x.id != null) ? x.id : x;
+    return String(v == null ? '' : v).trim().replace(/\.info$/i, '');
+  }
+
+  function isTombstoned(id) { return !!readTombs()[normId(id)]; }
+
+  function timeStamp() {
+    const d = new Date();
+    return '' + d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) +
+      '-' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
+  }
+
+  /* md 末尾的非空「手记」是用户自己写的内容，自动清理要绕开，留给手动确认。 */
+  function fileHasHand(file) {
+    try {
+      if (!file || !fs.existsSync(file)) return false;
+      return !!String(handOf(fs.readFileSync(file, 'utf8')) || '').trim();
+    } catch (e) { return false; }
+  }
+
+  /* 找出「vault 清单里记着、Eagle 全库里已经没有」的条目。
+     aliveIds 允许传 id 字符串，也允许传 { id } 对象（官方 API 的返回形态）。 */
+  function orphanCandidates(aliveIds) {
+    if (!isOn() || !node || !root) return [];
+    const list = Array.isArray(aliveIds) ? aliveIds : [];
+    if (!list.length) return [];              // API 没给出全库清单 = 不许判定任何孤儿
+    const alive = {};
+    list.forEach((x) => { const id = normId(x); if (id) alive[id] = true; });
+    const out = [];
+    Object.keys(manifest).forEach((id) => {
+      if (alive[normId(id)]) return;
+      const rec = manifest[id] || {};
+      const rel = String(rec.file || '');
+      const file = rel ? pathMod.join(root, rel) : '';
+      out.push({
+        id: id,
+        file: rel,
+        absFile: file,
+        title: String(rec.title || id),
+        hand: fileHasHand(file)
+      });
+    });
+    return out;
+  }
+
+  /* 每次对账先跑一遍：Eagle 里重新出现的条目（从回收站恢复）解除墓碑，
+     否则它会永远被 writeNow 拦住。返回本轮候选，供调用方复核后清理。 */
+  function syncAliveIds(aliveIds) {
+    const list = Array.isArray(aliveIds) ? aliveIds : [];
+    if (!list.length) return { revived: 0, candidates: [] };
+    const alive = {};
+    list.forEach((x) => { const id = normId(x); if (id) alive[id] = true; });
+    const t = readTombs();
+    let revived = 0;
+    Object.keys(t).forEach((id) => {
+      if (alive[normId(id)]) { delete t[id]; revived++; }
+    });
+    if (revived) writeTombs();
+    return { revived: revived, candidates: orphanCandidates(aliveIds) };
+  }
+
+  /* 回收：备份 → 删 md → 清 manifest / assets / 别名索引 → 写墓碑。
+     opts.skipHand = true 时，含非空手记的条目跳过（自动模式用），交给用户手动决定。 */
+  function pruneOrphans(ids, opts) {
+    const o = opts || {};
+    if (!isOn() || !node || !root) return { ok: false, removed: 0, backed: [], failed: [], skipped: [] };
+    const list = (Array.isArray(ids) ? ids : []).map(normId).filter(Boolean);
+    const backed = [], failed = [], skipped = [];
+    const t = readTombs();
+    const bdir = backupDirPath();
+    let removed = 0;
+    list.forEach((id) => {
+      const rec = manifest[id];
+      if (!rec) return;                       // 清单里没有就不动（不猜文件名）
+      const rel = String(rec.file || '');
+      const file = rel ? pathMod.join(root, rel) : '';
+      if (o.skipHand && fileHasHand(file)) { skipped.push(id); return; }
+      let backup = '';
+      let exists = false;
+      try { exists = !!file && fs.existsSync(file); } catch (e) { exists = false; }
+      if (exists) {
+        try {
+          fs.mkdirSync(bdir, { recursive: true });
+          backup = pathMod.join(bdir, timeStamp() + '-' + safeName(id) + '-' + pathMod.basename(file));
+          fs.copyFileSync(file, backup);
+          if (!fs.existsSync(backup)) throw new Error('backup missing');
+        } catch (e) {
+          failed.push({ id: id, why: 'backup-failed' });
+          return;                            // 备份失败：原件一个字节都不动
+        }
+      }
+      if (exists) { try { fs.unlinkSync(file); } catch (e) { /* 可能已被手动删掉 */ } }
+      pruneImages(id, rec.images || [], []);
+      try {
+        const ad = pathMod.join(root, 'assets', id);
+        if (fs.existsSync(ad) && !fs.readdirSync(ad).length) fs.rmdirSync(ad);
+      } catch (e) { /* ignore */ }
+      delete manifest[id]; markManifest();
+      if (libMap[id]) { delete libMap[id]; markLib(); }
+      t[id] = { at: Date.now(), file: rel, backup: backup ? pathMod.basename(backup) : '' };
+      removed++;
+      backed.push({ id: id, file: rel, backup: backup });
+    });
+    if (removed) { writeTombs(); flushManifest(); flushLib(); }
+    return { ok: true, removed: removed, backed: backed, failed: failed, skipped: skipped };
+  }
+
   /* ---------- 删除 / 清空 / 重建 ---------- */
   function remove(meta, data) {
     if (!node || !root) return false;
@@ -1856,6 +2022,7 @@ const Projection = (function () {
       try { raw = Store.readDocByKey(k); } catch (e) { raw = null; }
       if (!raw) return;
       const iid = raw.itemId || k;
+      if (isTombstoned(iid)) return;           // v4.4.2：已回收的条目不参与外部回读
       const info = itemInfoOf(iid, raw.fileName);
       const meta = {
         itemId: iid,
@@ -1890,6 +2057,7 @@ const Projection = (function () {
       /* 手上只有 docs/*.json，没有 Eagle 的 item 对象 —— 靠资料库目录反查源文件，
            否则 rebuildAll 生成的 MD 会丢掉 source:，PDF 还可能被当成视频。 */
       const id = raw.itemId || k;
+      if (isTombstoned(id)) return;            // v4.4.2：已回收的条目别在重建时复活
       const info = itemInfoOf(id, raw.fileName);
       const meta = {
         itemId: id,
@@ -1954,6 +2122,12 @@ const Projection = (function () {
     flush,
     remove,
     clearAll,
+    /* v4.4.2：Eagle 已删条目的存在性对账 */
+    orphanCandidates,
+    syncAliveIds,
+    pruneOrphans,
+    isTombstoned,
+    readTombs,
     rebuildAll,
     syncExternal,
     /* 测试用：观察 / 回拨注释写回状态（ecLocalAt 回拨可模拟「Eagle 迟迟不落盘」） */

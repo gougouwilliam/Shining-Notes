@@ -495,6 +495,7 @@
     on('#btnWbClear', 'click', () => clearAllData());
     on('#btnWbWipe', 'click', () => clearAllData({ wipe: true }));
     on('#btnWbAnnScan', 'click', annInspectAll);
+    on('#btnWbPruneOrphans', 'click', () => reconcileDeleted({ silent: false }));
     on('#btnWbClearHistory', 'click', clearHistoryOnly);
     on('#btnDailyKb', 'click', () => KnowledgeBase.open('daily'));
 
@@ -5955,6 +5956,17 @@
         Projection.syncExternal();
       } catch (e) { /* ignore */ }
     }, 15000);
+    /* v4.4.2：删除对账 —— 启动 8s 后跑一次，之后每 5 分钟一轮。
+       全库 item.get 有成本，不塞进 15s 的同步循环；复核 + 备份双保险，
+       静默轮自动跳过含手记的 md（交给工作台按钮手动确认）。 */
+    if (startProjSync._reconcileKick) clearTimeout(startProjSync._reconcileKick);
+    if (startProjSync._reconcileTimer) clearInterval(startProjSync._reconcileTimer);
+    startProjSync._reconcileKick = setTimeout(() => {
+      try { reconcileDeleted({ silent: true }); } catch (e) { /* ignore */ }
+    }, 8000);
+    startProjSync._reconcileTimer = setInterval(() => {
+      try { reconcileDeleted({ silent: true }); } catch (e) { /* ignore */ }
+    }, 300000);
   }
 
   function projMeta() {
@@ -6288,6 +6300,81 @@
     }
     U.toast('巡检完成：扫描 ' + (items || []).length + ' 条，清空 ' + ok + ' 条'
       + (fail ? ('，失败 ' + fail + ' 条（可稍后再点一次重试）') : ''), fail ? '' : 'ok', 7000);
+  }
+
+  /* v4.4.2：Eagle 已删条目 → vault 残留 md 的存在性对账。
+     现场：视频在 Eagle 里删了，OB 里那篇 md 还在。插件只按自己的 docs/*.json
+     生成 md，从不反查 Eagle，于是「只有注释、没进 docs」的条目成了永久死账，
+     连「重建全部」都看不见它（重建也只遍历 docs）。
+
+     流程：官方 API 拉全库 id → Projection 找清单孤儿 → 逐条 getById 复核 →
+     备份到 vault 外的 deleted-md/ → 回收 md / manifest / 别名 / 写墓碑。
+     静默模式（启动空闲轮）自动跳过含「手记」的条目，留给手动按钮确认。
+     任何一步 API 拿不到全库清单，都不许清理（防误删）。 */
+  async function reconcileDeleted(opts) {
+    const o = opts || {};
+    if (typeof Projection === 'undefined' || !Projection.isOn || !Projection.isOn()) {
+      if (!o.silent) U.toast('Obsidian 同步未开启，无需清理', '', 3000);
+      return { ok: false, why: 'proj-off' };
+    }
+    if (!Bridge.hasEagle) {
+      if (!o.silent) U.toast('不在 Eagle 环境里，无法核对资料库', '', 4000);
+      return { ok: false, why: 'no-eagle' };
+    }
+    let items = [];
+    try { items = await Bridge.getAllItems(['id', 'name']); } catch (e) { items = []; }
+    if (!items || !items.length) {
+      if (!o.silent) U.toast('没能读到资料库条目清单，本次不清理（防误删）', '', 4500);
+      return { ok: false, why: 'empty-library' };
+    }
+    const aliveIds = items.map((it) => it && it.id).filter(Boolean);
+    let snap;
+    try { snap = Projection.syncAliveIds(aliveIds); }
+    catch (e) { console.warn('[ProjReconcile] 对账失败', e); return { ok: false, why: 'sync-failed' }; }
+    if (!snap || !Array.isArray(snap.candidates)) return { ok: false, why: 'no-candidates-api' };
+    const cand = snap.candidates;
+    if (!cand.length) {
+      if (!o.silent) U.toast('核对完成：全库 ' + aliveIds.length + ' 条，vault 里没有已删条目的残留笔记', 'ok', 4500);
+      return { ok: true, removed: 0, revived: snap.revived };
+    }
+    /* 全量清单可能带缓存或延迟 —— 逐条 getById 复核，取不到才认定真的删了。
+       单条查询报错一律保守跳过（宁可留着，不可误删）。 */
+    const confirmed = [];
+    for (const c of cand) {
+      try {
+        const it = await Bridge.getItemById(c.id);
+        if (!it) confirmed.push(c);
+      } catch (e) { /* 保守跳过 */ }
+    }
+    if (!confirmed.length) {
+      if (!o.silent) U.toast('核对完成：' + cand.length + ' 条候选逐条复核后都还在 Eagle 里', 'ok', 4500);
+      return { ok: true, removed: 0, revived: snap.revived };
+    }
+    let todo = confirmed;
+    if (o.silent) {
+      todo = confirmed.filter((c) => !c.hand);
+      if (!todo.length) return { ok: true, removed: 0, skippedHand: confirmed.length };
+    } else {
+      const shown = confirmed.slice(0, 6)
+        .map((c) => '· ' + (c.title || c.id) + (c.hand ? '（含手记）' : '')).join('\n');
+      const more = confirmed.length > 6 ? ('\n… 等共 ' + confirmed.length + ' 条') : '';
+      const v = await confirmDialog('清理已删除条目',
+        'Eagle 里已找不到 ' + confirmed.length + ' 个条目，但 Obsidian 里还留着它们的笔记：\n' + shown + more +
+        '\n\n这些 md 会移出 vault，原件备份到 <库>\\.eaglenote\\deleted-md\\（可随时找回）；' +
+        '插件清单、别名索引一并清理。确定执行？',
+        [{ label: '取消', value: 'cancel' },
+         { label: '清理这 ' + confirmed.length + ' 条', value: 'ok', danger: true, primary: true }]);
+      if (v !== 'ok') return { ok: false, why: 'cancelled' };
+    }
+    let r;
+    try { r = Projection.pruneOrphans(todo.map((c) => c.id), { skipHand: false }); }
+    catch (e) { console.warn('[ProjReconcile] 回收失败', e); return { ok: false, why: 'prune-failed' }; }
+    if (!o.silent || r.removed) {
+      const tail = r.failed.length ? ('，' + r.failed.length + ' 条备份失败已保留原件') : '';
+      U.toast('已回收 ' + r.removed + ' 篇已删条目的笔记（原件已备份）' + tail,
+        r.failed.length ? '' : 'ok', 6000);
+    }
+    return r;
   }
 
   /* 只清「最近阅读」记录（工作台入口），摘录和笔记一条不动 */

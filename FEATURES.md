@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.4.1）
+# 功能自查对照表（v4.4.2）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -10,7 +10,7 @@
 | 🟡 | 实现点齐，但没有自动测试（多半是纯界面行为） |
 | ❌ | 找不到实现点（要修） |
 
-**合计 97 项：✅ 70 · 🟡 27 · ❌ 0**
+**合计 99 项：✅ 72 · 🟡 27 · ❌ 0**
 
 ## A. 打开与切换
 
@@ -20,7 +20,7 @@
 | ✅ | 插件窗口载入当前选中项 | `js/bridge.js` `js/app.js` | 1 处 |
 | ✅ | 启动器（LB7NOTEWB01）单图标进工作台 | `EagleNoteWorkbench/wb-launch.js` `EagleNoteWorkbench/manifest.json` | 47 处 |
 | 🟡 | 从系统拖入 PDF（getPathForFile 兜底） | `js/app.js` | — |
-| ✅ | 工作台 / 阅读界面互切 | `index.html` `js/app.js` | 45 处 |
+| ✅ | 工作台 / 阅读界面互切 | `index.html` `js/app.js` | 46 处 |
 | ✅ | 最近阅读 → 直接进那篇 | `js/store.js` `js/workbench.js` | 1 处 |
 
 ## B. 阅读
@@ -61,7 +61,7 @@
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
 | ✅ | 摘录 / 笔记 / 知识库 三页签 | `index.html` `js/app.js` | 4 处 |
-| ✅ | 回收站（可恢复 / 30 天） | `js/store.js` `js/app.js` | 3 处 |
+| ✅ | 回收站（可恢复 / 30 天） | `js/store.js` `js/app.js` | 4 处 |
 | ✅ | 卡片「另存原图」（按字节复制） | `js/app.js` | 2 处 |
 | 🟡 | 卡片 OCR | `js/app.js` | — |
 | 🟡 | 卡片翻译 | `js/app.js` | — |
@@ -75,7 +75,7 @@
 | --- | --- | --- | --- |
 | ✅ | 大笔记框（Markdown 实时预览） | `js/editor.js` `js/markdown.js` | 12 处 |
 | 🟡 | 笔记配图（拖入 / 粘贴） | `js/editor.js` | — |
-| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 37 处 |
+| ✅ | Markdown 副本落到 _notes/ | `js/projection.js` | 42 处 |
 | 🟡 | 笔记可导出 | `js/exporter.js` `js/app.js` | — |
 
 ## F. 视频
@@ -123,12 +123,14 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | md 投影：锚点 + 手改回读 + 冲突备份 | `js/projection.js` | 53 处 |
+| ✅ | md 投影：锚点 + 手改回读 + 冲突备份 | `js/projection.js` | 58 处 |
 | ✅ | 空内容不建 md，内容清空自动回收（手记保留） | `js/projection.js` | 8 处 |
 | ✅ | 删光内容回收修复：插件旧注释值不挡回收（hash 比对），仅 md 独有文本保留 | `js/projection.js` | 3 处 |
 | ✅ | Eagle 注释栏双向同步（eagle:ec 锚点 + 官方 API 写回） | `js/projection.js` | 2 处 |
 | ✅ | OB 文件夹移动/改名自动认领（锚点优先，assets 引用按深度重写） | `js/projection.js` | 15 处 |
 | ✅ | 写盘跟手：子文件夹 mkdir + manifest 存相对路径 | `js/projection.js` | 2 处 |
+| ✅ | v4.4.2 Eagle 已删条目对账：孤儿识别 + 备份回收 + 墓碑防复活 | `js/projection.js` | 9 处 |
+| ✅ | v4.4.2 删除对账自动/手动入口（全库 API 复核 + 工作台按钮） | `js/app.js` `index.html` | 3 处 |
 
 ## I. 窗口与退出
 
@@ -150,7 +152,7 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | 按 Eagle itemId 存，库改名不丢 | `js/store.js` | 22 处 |
+| ✅ | 按 Eagle itemId 存，库改名不丢 | `js/store.js` | 24 处 |
 | 🟡 | 每篇一份 docs/<id>.json | `js/store.js` | — |
 | ✅ | 索引里只存图片路径（不存 base64） | `js/app.js` | 9 处 |
 | ✅ | 回收站文件 trash.json | `js/store.js` | 9 处 |
