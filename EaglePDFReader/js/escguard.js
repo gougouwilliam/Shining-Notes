@@ -25,7 +25,12 @@
    * v4.4.0 用户明确要求恢复「ESC 关闭插件」。恢复的前提是三个兜底只剩一个：
    * ②③ 已删，决策点只有这里的 escapeAction，且 app.js 对 ESC **无条件**
    * preventDefault + stopPropagation（事件绝不会漏给 Eagle 宿主）。
-   * 于是 noop 这一档重新变成明确的 exit-plugin——单一决策点，行为可测。 */
+   * 于是 noop 这一档重新变成明确的 exit-plugin——单一决策点，行为可测。
+   * v4.4.1：用户实测「ESC 连同 Eagle 一起最小化」。根因不在这个判定，而在
+   * exitPlugin() 的关窗动作可能作用到 Eagle 主窗口（预览 webview 形态）。
+   * 于是把守卫下沉到关窗层（js/winguard.js + Bridge.closeVerdict）：
+   * ESC 仍返回 exit-plugin，但 exitPlugin 拿不到「自己是独立窗口」的证明时
+   * 一个窗口 API 都不碰，只提示。决策点依旧唯一，且多了一道身份闸门。 */
   function escapeAction(env) {
     env = env || {};
     if (env.depth > 0) return 'pop-layer';

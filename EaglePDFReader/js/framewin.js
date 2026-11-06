@@ -134,6 +134,12 @@
         return true;
       }
     } catch (e) { /* ignore */ }
+    /* v4.4.1：下面两条是绕过 Bridge 守卫的兜底链路（remote/IPC close、
+       window.close）。预览 webview 形态下它们同样可能关到 Eagle 主窗口，
+       所以先过一次身份裁决，守卫不过就直接放弃，绝不落到这两条路上。 */
+    let v = null;
+    try { v = (global.Bridge && global.Bridge.closeVerdict) ? global.Bridge.closeVerdict() : null; } catch (e) { /* ignore */ }
+    if (v && !v.allow) { log({ act: 'close', blocked: v.code }); return false; }
     if (act('close')) {
       setTimeout(() => { try { if (global.Bridge && global.Bridge.destroySelf) global.Bridge.destroySelf(); } catch (e) { /* ignore */ } }, 400);
       return true;

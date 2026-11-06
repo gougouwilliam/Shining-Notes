@@ -4,7 +4,19 @@
 3.3.0 起，摘录的高亮会**同步写进 PDF 文件本身**（换了阅读器也还在），顶栏是**常驻的全文搜索框**，并新增**视频笔记**。
 零外部依赖，全部资源（PDF.js、pdf-lib、CJK 字符映射、标准字体）随插件本地打包，**除划词翻译外不联网**。
 
-当前版本 **4.4.0**。
+当前版本 **4.4.1**。
+
+---
+
+## 更新记录 · 4.4.1（修复 ESC 连带 Eagle 一起最小化）
+
+- **用户实测回归**：v4.4.0 恢复「ESC 关闭插件」后，按 ESC 会把 Eagle 主界面一起收走（最小化到托盘）。
+- **根因**（翻 Eagle 4.0 `app.asar` 确认）：预览形态下插件跑在 Eagle 主窗口的 `<webview>` 里，`dom-ready` 注入 `window.parentID = 主窗口 webContents.id`、`window.windowID = webview id`。这种形态下 `require('@electron/remote').getCurrentWindow()` 和主进程 `BrowserWindow.fromWebContents(event.sender)`（`plugin.window.` IPC 的实现）都可能指回 **Eagle 主窗口**；对它 `close()` 会被 Eagle 的「关闭到托盘」拦成 minimize/hide，于是插件视图与整个 Eagle 一起消失。v3.22 曾有 `canSelfClosePreview()`（`windowID === parentID` 时拒绝关窗），v3.31 随「ESC 永不关窗口」删掉；v4.4.0 恢复关窗却没恢复守卫 = 回归点。
+- **修复① identity guard**：新增纯函数 `js/winguard.js`（`closeVerdict`），只有能证明「自己是另一个窗口」时才允许关窗：`selfIsHost`、`windowID === parentID`、`selfId === parentID`、拿不到 selfId、窗口列表不足两个、selfId 不在列表内、预览形态无佐证 —— 任一命中即拒绝。`Bridge.closeSelf()` / `destroySelf()` 与 framewin 的两条兜底链路全部先过守卫，守卫不过**一个窗口 API 都不碰**。
+- **修复② exitPlugin 安全化**：守卫拒绝时不关窗、不销毁、不 window.close，只 restore/show 主窗口（不抢焦点）并提示「当前是 Eagle 预览视图，请按空格或点 Eagle 的返回退出预览」。ESC 决策不变（空栈仍 exit-plugin，浮层/搜索/输入优先级不变），但出口多了一道身份闸门。
+- **修复③ 宿主恢复兜底**：`focusParent()` 增强为 parentID 缺失时也能从窗口列表里找出宿主；关窗前后共 3 次 restore/show（120/420ms）＋ ESC 后 260ms 一次，任何把主窗口收走的副作用都会被纠正回来。只做恢复，绝不最小化/隐藏。
+- **诊断**：`debug.log` 新增 `exit.guard` / `exit.guard.deny` 行，记录 mode、parentID、windowID、selfId、窗口数与裁决码，再出问题一眼可定位。
+- 行为边界：独立窗口形态（从插件面板/闪灵面板打开）ESC 照常关闭插件；Eagle 预览视图形态 ESC 不再执行关闭（那是唯一会波宿主的形态），改用 Eagle 原生的空格/返回退出预览。Ctrl+W、✕ 同样受守卫保护。
 
 ---
 

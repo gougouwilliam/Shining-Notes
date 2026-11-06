@@ -759,6 +759,9 @@ const Bridge = (function () {
      调 hide()/minimize() 会把 Eagle 整个收进托盘，这是个很容易踩的坑。 */
   function closeWindow() {
     if (state.mode !== 'window') return false;
+    /* v4.4.1：这条老通道也要过身份守卫 —— 它调用的 eagle.window.hide()
+       在形态判定失准时会把 Eagle 主窗口收进托盘。 */
+    try { if (!closeVerdict().allow) return false; } catch (e) { return false; }
     try {
       const e = api();
       const w = e && e.window;
@@ -831,12 +834,54 @@ const Bridge = (function () {
     try { return r.getCurrentWindow(); } catch (e) { return null; }
   }
 
-  /* 把 Eagle 主窗口叫回来。找不到就安静失败（预览窗口形态下没有 parentID）。 */
-  function focusParent() {
+  /* v4.4.1：关窗前的身份取证 —— 把「我是谁、宿主是谁、系统里有几个窗口」
+     交给 winguard.js 的纯函数裁决。取证失败一律按「不安全」处理。 */
+  function windowIdentity() {
+    const out = { mode: state.mode, parentID: null, windowID: null, selfId: null, allIds: null, selfIsHost: false };
+    try { out.parentID = (typeof window !== 'undefined') ? (window.parentID || null) : null; } catch (e) { /* ignore */ }
+    try { out.windowID = (typeof window !== 'undefined') ? (window.windowID || null) : null; } catch (e) { /* ignore */ }
+    const r = remoteApi();
+    const self = selfWindow();
+    try {
+      if (self && self.webContents) out.selfId = self.webContents.id || null;
+    } catch (e) { /* ignore */ }
+    try {
+      if (r && r.BrowserWindow && typeof r.BrowserWindow.getAllWindows === 'function') {
+        const all = r.BrowserWindow.getAllWindows() || [];
+        out.allIds = [];
+        for (let i = 0; i < all.length; i++) {
+          try { if (all[i] && all[i].webContents) out.allIds.push(all[i].webContents.id); } catch (e) { /* ignore */ }
+        }
+      }
+    } catch (e) { out.allIds = null; }
+    if (out.parentID != null && out.selfId != null && Number(out.parentID) === Number(out.selfId)) {
+      out.selfIsHost = true;
+    }
+    return out;
+  }
+
+  function closeVerdict() {
+    const WG = (typeof WinGuard !== 'undefined') ? WinGuard
+      : (typeof window !== 'undefined' ? window.WinGuard : null);
+    if (!WG || typeof WG.closeVerdict !== 'function') {
+      /* 守卫模块没加载 → 保守起见拒绝关窗（绝不误关 Eagle 主窗口） */
+      return { allow: false, code: 'guard-missing' };
+    }
+    return WG.closeVerdict(windowIdentity());
+  }
+
+  /* 把 Eagle 主窗口叫回来。
+     v4.4.1：parentID 缺失时也能工作 —— 从 getAllWindows() 里挑出「不是自己」
+     的那个窗口（预览 webview 形态下 parentID 一定存在，这里主要兜独立窗口形态）。
+     opts.focus === false 时只 restore/show、不抢焦点（守卫拒绝关窗后用）。 */
+  function focusParent(opts) {
     const r = remoteApi();
     if (!r || !r.BrowserWindow) return false;
     try {
       const wantId = (typeof window !== 'undefined') ? window.parentID : null;
+      const self = selfWindow();
+      let selfId = null;
+      try { selfId = self && self.webContents ? self.webContents.id : null; } catch (e) { /* ignore */ }
       const all = r.BrowserWindow.getAllWindows() || [];
       let win = null;
       if (wantId != null) {
@@ -845,16 +890,37 @@ const Bridge = (function () {
           try { if (w && w.webContents && w.webContents.id === wantId) { win = w; break; } } catch (e) { /* ignore */ }
         }
       }
+      /* 兜底：取「不是自己、没被销毁」里最靠前的一个当作宿主。
+         绝不把焦点/可见性操作施加到自己身上以外的对象上误判为关闭动作。 */
+      if (!win) {
+        for (let i = 0; i < all.length; i++) {
+          const w = all[i];
+          try {
+            if (!w || (w.isDestroyed && w.isDestroyed())) continue;
+            const wid = w.webContents && w.webContents.id;
+            if (selfId != null && wid === selfId) continue;
+            win = w;
+            break;
+          } catch (e) { /* ignore */ }
+        }
+      }
       if (!win) return false;
       if (win.isMinimized && win.isMinimized()) win.restore();
       if (win.isVisible && !win.isVisible()) win.show();
-      if (win.focus) win.focus();
+      if ((!opts || opts.focus !== false) && win.focus) win.focus();
       return true;
     } catch (e) { return false; }
   }
 
-  /* 关窗：优先 remote（同步、可靠），没有就退回 IPC 转发 */
+  /* 关窗：先过身份守卫，再优先 remote（同步、可靠），没有就退回 IPC 转发。
+     v4.4.1：守卫拒绝时**一个窗口 API 都不碰** —— 预览 webview 形态下
+     remote/IPC 都可能指向 Eagle 主窗口，close 它会被收进托盘。 */
   function closeSelf() {
+    const v = closeVerdict();
+    if (!v.allow) {
+      try { if (typeof Dbg !== 'undefined') Dbg.log('exit.guard.deny', v.code); } catch (e) { /* ignore */ }
+      return false;
+    }
     const w = selfWindow();
     if (w) {
       try {
@@ -866,6 +932,8 @@ const Bridge = (function () {
   }
 
   function destroySelf() {
+    const v = closeVerdict();
+    if (!v.allow) return false;
     const w = selfWindow();
     if (w) {
       try {
@@ -1027,6 +1095,8 @@ const Bridge = (function () {
     closeSelf,
     destroySelf,
     focusParent,
+    closeVerdict,
+    windowIdentity,
     canIpcWindow,
     copyImageDataUrl,
     addUrlToLibrary,

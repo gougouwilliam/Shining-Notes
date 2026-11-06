@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.4.0）
+# 功能自查对照表（v4.4.1）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -10,7 +10,7 @@
 | 🟡 | 实现点齐，但没有自动测试（多半是纯界面行为） |
 | ❌ | 找不到实现点（要修） |
 
-**合计 95 项：✅ 68 · 🟡 27 · ❌ 0**
+**合计 97 项：✅ 70 · 🟡 27 · ❌ 0**
 
 ## A. 打开与切换
 
@@ -32,7 +32,7 @@
 | ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 73 处 |
 | ✅ | 缩略图惰性渲染 | `js/app.js` | 13 处 |
 | ✅ | 目录 / 缩略图弹出面板（v4.1，原左栏） | `js/app.js` `css/app.css` | 5 处 |
-| ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 56 处 |
+| ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 58 处 |
 | 🟡 | 搜索临时标记不进 PDF | `css/app.css` `js/app.js` | — |
 | 🟡 | 内部链接翻页 / 外部链接三选一 | `js/app.js` | — |
 | ✅ | 明暗主题切换（记忆） | `js/store.js` `js/app.js` | 1 处 |
@@ -134,15 +134,17 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 81 处 |
-| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 81 处 |
-| ✅ | ESC 真能关窗（IPC close→destroy） | `js/bridge.js` | 17 处 |
+| ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 83 处 |
+| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 83 处 |
+| ✅ | ESC 真能关窗（IPC close→destroy） | `js/bridge.js` | 21 处 |
 | ✅ | 关不掉时常驻横幅 + 再试/最小化 | `js/app.js` `css/app.css` | 1 处 |
 | 🟡 | ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役） | `js/app.js` | — |
+| ✅ | v4.4.1 关窗身份守卫：绝不把 close/destroy 施加到 Eagle 主窗口 | `js/winguard.js` `js/bridge.js` `js/app.js` | 1 处 |
+| ✅ | v4.4.1 宿主恢复兜底：只 restore/show，不 minimize/hide | `js/bridge.js` `js/app.js` | 11 处 |
 | ✅ | Ctrl+W 关闭 | `js/app.js` | 14 处 |
 | 🟡 | 预览模式紧凑布局（mode-preview） | `css/app.css` | — |
 | 🟡 | 窗口底色跟随主题（不闪白） | `js/bridge.js` | — |
-| ✅ | 无边框窗口 + 自绘标题栏 | `js/framewin.js` `js/app.js` | 20 处 |
+| ✅ | 无边框窗口 + 自绘标题栏 | `js/framewin.js` `js/app.js` | 22 处 |
 
 ## J. 数据
 
@@ -155,7 +157,7 @@
 | 🟡 | 换大版本自动清库（migrateEpoch） | `js/store.js` | — |
 | ✅ | 写 PDF 前先备份（pdfbak） | `js/pdfwrite.js` `js/store.js` | 2 处 |
 | ✅ | 清数据连素材副本一起清（media/） | `js/store.js` | 50 处 |
-| ✅ | 运行日志 debug.log（200KB 轮转） | `js/dbg.js` | 13 处 |
+| ✅ | 运行日志 debug.log（200KB 轮转） | `js/dbg.js` | 15 处 |
 
 ## K. 稳定性
 

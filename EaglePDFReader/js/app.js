@@ -6401,6 +6401,7 @@
     if (exiting) return;
     exiting = true;
     setTimeout(() => { exiting = false; }, 1500);
+    const dbg = (t, v) => { try { if (typeof Dbg !== 'undefined') Dbg.log(t, v); } catch (e) { /* ignore */ } };
 
     try { flushDrafts(); } catch (e) { console.warn('[exit] 保存草稿失败', e); }
     try { persist(true); } catch (e) { console.warn('[exit] 保存失败', e); }
@@ -6410,6 +6411,25 @@
 
     const alive = () => { try { return !window.closed; } catch (e) { return false; } };
 
+    /* ⓪v4.4.1：关窗前先做身份裁决。
+       预览形态下插件跑在 Eagle 主窗口的 <webview> 里，remote.getCurrentWindow()
+       和 IPC 的 BrowserWindow.fromWebContents(sender) 都可能指回主窗口；
+       对主窗口 close() 会被 Eagle 的「关闭到托盘」拦成最小化 —— 用户实测
+       「按 ESC 连同 Eagle 一起最小化」。守卫不过就一个窗口 API 都不碰。 */
+    let verdict = { allow: true, code: 'no-guard' };
+    try {
+      if (Bridge.closeVerdict) verdict = Bridge.closeVerdict();
+      dbg('exit.guard', verdict);
+    } catch (e) { dbg('exit.guard.err', e); }
+    if (!verdict.allow) {
+      /* 只做恢复，不做关闭：万一这一下 ESC 仍旧漏给了 Eagle、把主窗口收走，
+         这里把它 restore+show 回来（不抢焦点，插件还开着）。 */
+      try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
+      U.toast('当前是 Eagle 预览视图，为保护主界面不执行关闭；请按空格或点 Eagle 的返回退出预览', '', 3600);
+      exiting = false;
+      return;
+    }
+
     /* ⓪ v3.30：先把 Eagle 主窗口捞回来。
        用户报「偶发按 ESC 退出插件后，落到一个最小化的 Eagle」——
        不是被我们最小化了，而是 Eagle 本来就缩在托盘/任务栏，
@@ -6417,11 +6437,19 @@
        所以关自己之前，把主窗口 restore → show → focus 一次。 */
     try { if (Bridge.focusParent) Bridge.focusParent(); } catch (e) { /* ignore */ }
 
-    /* ① 主进程关窗（首选）：正常关闭流程，Eagle 能收到 closed 事件 */
+    /* ① 主进程关窗（首选）：正常关闭流程，Eagle 能收到 closed 事件。
+       Bridge.closeSelf() 内部还有同一道身份守卫，双保险。 */
     let tried = false;
     try { tried = !!(Bridge.closeSelf && Bridge.closeSelf()); } catch (e) { tried = false; }
-    /* ② 老办法一起发：window.close() 在个别 Eagle 版本里仍然有效 */
+    /* ② 老办法一起发：window.close() 在个别 Eagle 版本里仍然有效。
+       只在守卫通过时才发 —— 预览 webview 形态下它可能触发宿主的收起逻辑。 */
     try { window.close(); } catch (e) { /* ignore */ }
+
+    /* ②b v4.4.1：关窗之后再补两次恢复。任何把 Eagle 主窗口收走的副作用
+       （Eagle 自己收到 ESC、预览窗口关闭触发的收起）都在这里被纠正回来。 */
+    [120, 420].forEach((ms) => setTimeout(() => {
+      try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
+    }, ms));
 
     /* ③ 400ms 后还活着 → 无条件销毁。到这一步 close 已经确定被拦住了
        （beforeunload / 主进程策略），再等下去就是「按了没反应」。 */
@@ -6686,8 +6714,12 @@
       if (closeVisibleOverlay()) return;
       /* v4.4.0：什么都不用关 → 关闭插件（与 ✕ / Ctrl+W 同一条出口，会顺带存草稿）。
          v3.31 时代这里只提示「退出请按 Ctrl+W」；用户要求恢复 ESC 关闭。
-         安全前提：决策点只剩 escguard 一处，且事件已无条件 preventDefault + stopPropagation，
-         绝不会漏给 Eagle 宿主（v3.21 三层兜底误退的事故不会再发生）。 */
+         v4.4.1：exitPlugin() 内先过窗口身份守卫；守卫不过就一个窗口 API 都不碰。 */
+      /* 延迟再补一次宿主恢复：预览 webview 形态下这一下 ESC 若仍被 Eagle 收到、
+         把主窗口收进托盘，260ms 后 restore+show 把它捞回来（不抢焦点）。 */
+      setTimeout(() => {
+        try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
+      }, 260);
       exitPlugin();
       return;
     }
