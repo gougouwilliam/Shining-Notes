@@ -37,11 +37,24 @@
     return (global.eagle && global.eagle.window) || null;
   }
 
+  /* v4.5.1 安全绳：URL 里带 id / path 就是「打开某个条目」的预览页。
+     预览页跑在 Eagle 主窗口的 <webview> 里，此时 @electron/remote /
+     plugin.window. 都指向**主窗口** —— 最小化/最大化/关闭会作用到 Eagle 本身。
+     所以只要出现 id / path，一律不当启动器，一个窗口 API 都不碰。 */
+  function isPreviewUrl() {
+    try {
+      const s = global.location.search || '';
+      return /(?:\?|&)(?:id|path)=/.test(s);
+    } catch (e) { return false; }
+  }
+
   function isLauncher() {
+    if (isPreviewUrl()) return false;
     try { if (LAUNCH_RE.test(global.location.search || '')) return true; } catch (e) { /* ignore */ }
     /* 兜底：Bridge 已经把 query 解析出来了（晚一点的调用路径会走到这里） */
     try {
       const q = (global.Bridge && global.Bridge.state && global.Bridge.state.query) || {};
+      if (q.id || q.path) return false;
       return q.launcher === '1' || q.launcher === 1 || q.launcher === true;
     } catch (e) { return false; }
   }

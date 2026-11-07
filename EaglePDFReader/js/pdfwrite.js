@@ -50,6 +50,34 @@ const PdfWrite = (function () {
     return !!lib() && !!mods();
   }
 
+  /* v4.5.1：pdf-lib 从首屏挪到空闲加载（js/vendorload.js）。
+     ensure() 给「马上就要写文件」的路径用：库还没到就等它到（或明确失败），
+     避免「刚打开就保存」时静默漏掉一次回写。 */
+  function ensure() {
+    if (lib()) return Promise.resolve(true);
+    try {
+      if (typeof Vendor !== 'undefined' && Vendor.ensure) {
+        return Promise.resolve(Vendor.ensure('pdflib')).then(() => !!lib());
+      }
+    } catch (e) { /* ignore */ }
+    return Promise.resolve(false);
+  }
+
+  /* 库到位后回调一次，参数是「到底有没有到」。
+     调用方据此决定补做还是彻底放弃 —— 不能只在成功时回调，
+     否则调用方的「只补一次」标记会永远卡住。 */
+  function whenReady(fn) {
+    const run = (ok) => { try { fn(!!ok); } catch (e) { /* ignore */ } };
+    if (lib()) return run(true);
+    try {
+      if (typeof Vendor !== 'undefined' && Vendor.ensure) {
+        Promise.resolve(Vendor.ensure('pdflib')).then((ok) => run(!!lib() && !!ok));
+        return;
+      }
+    } catch (e) { /* ignore */ }
+    run(false);
+  }
+
   /* ---------- 几何：显示坐标（左上原点）→ PDF 用户坐标（左下原点） ---------- */
   /* viewport.transform 是 pdf.js 给的「用户空间 → 显示空间」矩阵，
      求逆就能把归一化矩形换回用户空间，顺带天然处理 /Rotate 与 CropBox 偏移。 */
@@ -371,7 +399,7 @@ const PdfWrite = (function () {
   }
 
   return {
-    available, sync, restore, countMarks,
+    available, ensure, whenReady, sync, restore, countMarks,
     /* 外观格式版本：改了「怎么画」就 +1，插件会据此把老文件里的旧注释重写一遍
        1 → 首版；2 → BBox 与 Rect 对齐、一条一个流；3 → 修 `gs` 操作数（/GS0 gs）；
        4 → 正片叠底 + 0.45 + 近原色 /C（和 WPS 高亮同色系） */

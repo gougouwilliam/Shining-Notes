@@ -16,7 +16,9 @@ SRC = os.path.join(HERE, sys.argv[2] if len(sys.argv) > 2 else "EaglePDFReader")
 
 # 不进入安装包的开发期文件
 EXCLUDE_DIRS = {"dist", "__pycache__", ".git", "node_modules", "Plugins"}
-EXCLUDE_FILES = {".DS_Store", "Thumbs.db"}
+# v4.5.1：README/FEATURES 是给仓库和人看的，插件运行时一个字节都不读。
+# 单是 README.md 就有 300KB，以前每装一次都要跟着落进 Plugins 目录。
+EXCLUDE_FILES = {".DS_Store", "Thumbs.db", "README.md", "FEATURES.md"}
 
 MAIN_DIR = "EaglePDFReader"       # 版本号以主插件为准
 WB_DIR = "EagleNoteWorkbench"     # 工作台（启动器）必须与主插件同版本
@@ -58,11 +60,13 @@ def main():
         os.remove(out)
 
     count = 0
+    skipped = []
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for root, dirs, files in os.walk(SRC):
             dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
             for fn in files:
                 if fn in EXCLUDE_FILES:
+                    skipped.append(os.path.relpath(os.path.join(root, fn), SRC).replace("\\", "/"))
                     continue
                 full = os.path.join(root, fn)
                 rel = os.path.relpath(full, SRC).replace("\\", "/")
@@ -75,6 +79,8 @@ def main():
 
     size_mb = os.path.getsize(out) / 1048576
     print(f"OK  {os.path.basename(out)}  {count} files  {size_mb:.2f} MB")
+    if skipped:
+        print(f"    skipped (non-runtime): {', '.join(skipped)}")
     print(f"    id={manifest.get('id')}  version={version}  devTools={manifest.get('devTools')}")
 
 

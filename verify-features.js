@@ -181,6 +181,13 @@ const FEATURES = [
   { g: 'K. 稳定性', n: '图片缩略图内存缓存（blob URL）', c: [['js/imgcache.js', 'blob'], ['js/imgcache.js', '_whiteRows']], t: 'ImgCache' },
   { g: 'K. 稳定性', n: '另存三态（选了 / 取消 / 弹不出来）', c: [['js/saveas.js', 'askEx'], ['js/saveas.js', 'unavailable']], t: 'askEx' },
   { g: 'K. 稳定性', n: '编辑器构造冒烟（防 TDZ 这类错）', c: [['js/editor.js', 'NoteEditor']], t: '编辑器冒烟' },
+
+  /* ── L. 性能与维护（v4.5.1） ── */
+  { g: 'L. 性能与维护', n: 'v4.5.1 大块头 vendor 空闲加载（pdf-lib 525KB / pinyin-pro 326KB 移出首屏）', c: [['js/vendorload.js', 'function prefetch('], ['js/vendorload.js', "pdflib: 'vendor/pdflib/pdf-lib.min.js'"], ['js/app.js', "sync('预取依赖'"]], t: 'vendorload' },
+  { g: 'L. 性能与维护', n: 'v4.5.1 懒加载未就绪时降级、就绪后自动生效（拼音 / PDF 回写）', c: [['js/editor.js', 'function pinyinMatch()'], ['js/pdfwrite.js', 'function whenReady(fn)'], ['js/app.js', 'function retryWhenPdfLib(fn)']], t: 'pinyinMatch' },
+  { g: 'L. 性能与维护', n: 'v4.5.1 启动耗时埋点：boot.slow（≥60ms 的步骤）+ boot.done 汇总', c: [['js/app.js', 'const bootT0 = '], ['js/app.js', "Dbg.log('boot.slow'"], ['js/app.js', "Dbg.log('boot.done'"]], t: 'boot.done' },
+  { g: 'L. 性能与维护', n: 'v4.5.1 退出即停后台定时器（显存轮询 / 投影回读 / 删除对账）', c: [['js/app.js', 'function stopBgTimers()'], ['js/app.js', 'clearInterval(state.rtTimer)']], t: 'stopBgTimers' },
+  { g: 'L. 性能与维护', n: 'v4.5.1 安装包排除 README/FEATURES，部署脚本清理陈旧文件（保留 window-state.json）', c: [['../pack-plugin.py', 'README.md'], ['../deploy-plugin.py', 'PRESERVE']], t: 'deploy-plugin' },
 ];
 
 /* ── 逐条判定 ── */

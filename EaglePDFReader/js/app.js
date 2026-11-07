@@ -58,13 +58,32 @@
   /* ==================== 启动 ==================== */
   const bootErrors = [];
 
+  /* v4.5.1：启动耗时埋点。
+     现场「打开插件有点慢」这种反馈，光靠感觉没法优化，也没法验证有没有变快。
+     这里把每个异步启动步骤的耗时累计起来，boot.done 一次写进 debug.log：
+       boot.done {"total":820,"dcl":310,"slow":"连接 Eagle:260,载入初始文档:300"}
+     只看 slow（≥60ms 的步骤）与 total —— 有数据再谈优化，不猜。 */
+  const bootT0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  const bootMarks = [];
+  function sinceBoot() {
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    return Math.round(now - bootT0);
+  }
+
   async function step(name, fn) {
+    const t0 = sinceBoot();
     try {
       return await fn();
     } catch (err) {
       console.error('[boot:' + name + ']', err);
       bootErrors.push(name + '：' + ((err && err.message) || err));
       return undefined;
+    } finally {
+      const ms = sinceBoot() - t0;
+      bootMarks.push({ name: name, ms: ms });
+      if (ms >= 60) {
+        try { if (typeof Dbg !== 'undefined') Dbg.log('boot.slow', { step: name, ms: ms }); } catch (e) { /* ignore */ }
+      }
     }
   }
 
@@ -158,6 +177,9 @@
       try { Bridge.initHostEscReceiver(); } catch (e) { /* ignore */ }
       try { Bridge.installHostEscBridge(true); } catch (e) { /* ignore */ }
     });
+    /* v4.5.1：大块头 vendor（pdf-lib / pinyin-pro）丢到空闲时加载。
+       首屏因此少了 851KB 的解析；没就绪时各自降级，加载完自动生效。 */
+    sync('预取依赖', () => { try { Vendor.prefetch(); } catch (e) { /* ignore */ } });
 
     /* ---------- 第二段：异步，连接 Eagle ---------- */
     (async () => {
@@ -206,7 +228,9 @@
         try { await Bridge.shortcutsSettled(200); } catch (e) { /* ignore */ }
         try { Bridge.setHostShortcuts(true); } catch (e) { /* ignore */ }
       });
-      await step('同步窗口底色', () => Bridge.syncWindowBg(document.documentElement.dataset.theme));
+      /* v4.5.1：不再 await —— 底色是「补一刀」的装饰，没必要让后面所有步骤
+         （尤其载入初始文档）等它这一趟 IPC。失败也不该影响启动。 */
+      await step('同步窗口底色', () => { try { Bridge.syncWindowBg(document.documentElement.dataset.theme); } catch (e) { /* ignore */ } });
 
       /* v4.3.0：Obsidian 同步复活 —— 原「知识库同步钩子」步骤以双向形态回归。
          writeNow 写前自动「先吸外部手改再写」，这里只负责两件事：
@@ -220,15 +244,6 @@
          这里补一次：幂等、只刷新按钮状态，不会重复绑定。
          用户报「✕ / 最小化 / 最大化 全点不动」，根因就是以前这个顺序问题。 */
       await step('自绘窗口条（补）', () => { try { FrameWin.init(); } catch (e) { /* ignore */ } });
-
-      /* v3.28.3：把「这台机器上对话框/截屏通道到底通不通」记一笔。
-         以后再有「截图存不下来」的反馈，先看这一行就够判断了。 */
-      try {
-        if (typeof Dbg !== 'undefined') {
-          const env = await Bridge.windowProbe();
-          Dbg.log('env', env);
-        }
-      } catch (e) { /* ignore */ }
 
       if (Bridge.state.mode === 'preview') await step('预览布局', () => applyPreviewLayout());
 
@@ -250,6 +265,20 @@
       if (Bridge.state.mode === 'window' || location.hash === '#workbench') {
         try { Workbench.open(true); } catch (e) { /* ignore */ }
       }
+
+      /* v3.28.3：把「这台机器上对话框/截屏通道到底通不通」记一笔。
+         以后再有「截图存不下来」的反馈，先看这一行就够判断了。
+         v4.5.1：从关键路径挪走 —— env 只是诊断日志，以前却卡在「载入初始文档」
+         前面等两趟 IPC。现在放到首屏之后再跑，慢一步不影响任何功能。 */
+      setTimeout(() => {
+        (async () => {
+          try {
+            if (typeof Dbg === 'undefined') return;
+            const env = await Bridge.windowProbe();
+            Dbg.log('env', env);
+          } catch (e) { /* ignore */ }
+        })();
+      }, 600);
 
       /* 本地模型：不管有没有打开文档，插件一起来就试着把它拉起。
          停在工作台里也该是「随时能用」的状态，而不是等用户点到 OCR 才发现没起。
@@ -277,6 +306,17 @@
           if (sel.length && (!state.item || sel[0].id !== state.item.id)) openItem(sel[0]);
         } catch (e) { /* ignore */ }
       });
+
+      /* v4.5.1：启动耗时的唯一出口。slow 里只有 ≥60ms 的步骤，
+         没有数据就不猜优化，也不制造日志噪声。 */
+      try {
+        if (typeof Dbg !== 'undefined') {
+          Dbg.log('boot.done', {
+            total: sinceBoot(),
+            slow: bootMarks.filter((m) => m.ms >= 60).map((m) => m.name + ':' + m.ms).join(',') || 'none'
+          });
+        }
+      } catch (e) { /* ignore */ }
 
       if (bootErrors.length) showFatal('部分功能初始化失败：' + bootErrors.join('；'));
     })();
@@ -791,6 +831,7 @@
       /* v4.5.0：把打字防抖里还没发出去的那次投影立刻落盘，别等 0.7s ——
          页面卸载后定时器就没了，那次改动会等到下次打开才对账。 */
       try { if (typeof Projection !== 'undefined') Projection.flush(); } catch (e) { /* ignore */ }
+      try { stopBgTimers(); } catch (e) { /* ignore */ }
       try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
       /* v4.4.8：宿主 ESC 转发桥随插件一起下线，不在 Eagle 主窗口留残留 */
       try { Bridge.installHostEscBridge(false); } catch (e) { /* ignore */ }
@@ -798,6 +839,7 @@
     window.addEventListener('beforeunload', onUnloadPersist);
     window.addEventListener('pagehide', () => {
       try { if (typeof Projection !== 'undefined') Projection.flush(); } catch (e) { /* ignore */ }
+      try { stopBgTimers(); } catch (e) { /* ignore */ }
       try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
       try { Bridge.installHostEscBridge(false); } catch (e) { /* ignore */ }
     });
@@ -3392,9 +3434,26 @@
       .join('\n');
   }
 
+  /* v4.5.1：pdf-lib 改为空闲加载后，打开文档那一刻它可能还没到。
+     以前这里直接 return，于是「外观版本自愈」这一次就永久错过了。
+     现在挂一次回调：库到位后把同一件事补做一遍（只补一次，不递归）。 */
+  let pdfLibRetryQueued = false;
+  function retryWhenPdfLib(fn) {
+    try {
+      if (pdfLibRetryQueued || typeof PdfWrite === 'undefined' || !PdfWrite.whenReady) return;
+      pdfLibRetryQueued = true;
+      PdfWrite.whenReady((ok) => {
+        /* 无论成败都把标记放下：失败后用户下次再触发，还能重新试一次 */
+        pdfLibRetryQueued = false;
+        if (!ok) return;
+        try { fn(); } catch (e) { /* ignore */ }
+      });
+    } catch (e) { pdfLibRetryQueued = false; }
+  }
+
   function schedulePdfSync() {
     if (!state.doc || state.isVideo || !state.item || !state.item.filePath) return;
-    if (!PdfWrite.available()) return;
+    if (!PdfWrite.available()) { retryWhenPdfLib(schedulePdfSync); return; }
     if (state.pdfSync.reason === 'encrypted' && state.pdfSync.key === docStorageKey()) return;
     pdfSyncDebounced();
   }
@@ -3410,7 +3469,7 @@
 
   function maybeHealPdf() {
     if (!state.doc || state.isVideo || !state.item || !state.item.filePath) return;
-    if (!PdfWrite.available()) return;
+    if (!PdfWrite.available()) { retryWhenPdfLib(maybeHealPdf); return; }
     const has = (state.data.annotations || [])
       .some((a) => a.type === 'highlight' && (a.rects || []).length);
     if (!has) return;                       // 没高亮就没什么可修的，别去动人家的文件
@@ -6079,6 +6138,20 @@
     }, 300000);
   }
 
+  /* v4.5.1：退出时把所有后台定时器停掉。
+     插件被收起后 renderer 还在，3 秒一轮的投影扫描、5 分钟一轮的删除对账、
+     20 秒一轮的显存刷新都会继续跑 —— 白耗 CPU，还会在库目录里反复 stat。
+     注意顺序：必须先 Projection.flush()（把尾巴写完）再停表。 */
+  function stopBgTimers() {
+    try { if (state.rtTimer) { clearInterval(state.rtTimer); state.rtTimer = null; } } catch (e) { /* ignore */ }
+    try {
+      if (startProjSync._timer) { clearInterval(startProjSync._timer); startProjSync._timer = null; }
+      if (startProjSync._reconcileTimer) { clearInterval(startProjSync._reconcileTimer); startProjSync._reconcileTimer = null; }
+      if (startProjSync._rebuildKick) { clearTimeout(startProjSync._rebuildKick); startProjSync._rebuildKick = null; }
+      if (startProjSync._reconcileKick) { clearTimeout(startProjSync._reconcileKick); startProjSync._reconcileKick = null; }
+    } catch (e) { /* ignore */ }
+  }
+
   function projMeta() {
     const it = state.item || {};
     let libraryName = '';
@@ -6213,7 +6286,12 @@
      清空索引时如果只删 JSON，用户拿别的阅读器打开还是满屏高亮 ——「清空」等于没清。
      先 countMarks 探一下，文件里本来就没有我们的东西就一个字节都不动。 */
   async function clearPdfMarksInFile(filePath) {
-    if (!filePath || !PdfWrite.available()) return 0;
+    if (!filePath) return 0;
+    /* 用户主动「清空」，值得等一下库：真空手而归会让文件里留下满屏孤儿高亮 */
+    if (!PdfWrite.available()) {
+      try { await PdfWrite.ensure(); } catch (e) { /* ignore */ }
+    }
+    if (!PdfWrite.available()) return 0;
     let bytes = null;
     try { bytes = Store.readFileBuffer(filePath); } catch (e) { return 0; }
     if (!bytes) return 0;
@@ -6554,25 +6632,26 @@
     }
   }
 
-  /* ==================== 退出（v3.28 重写） ====================
-     四次「ESC 还是不行」之后，翻 Eagle 的 app.asar 才找到真正的出口：
-       ipcMain.handle('plugin.window.', (event, { method, value, value2 }) => {
-         const bw = BrowserWindow.fromWebContents(event.sender);
-         if (bw && bw[method]) return bw[method](value, value2);
-       })
-     主进程会把**任意** BrowserWindow 方法转发给「发出这条消息的那个窗口」。
-     eagle.window 里没有 close（只有 show/hide/minimize…），以前只能退回 hide() ——
-     而 hide() 只是把窗口藏起来，浏览器窗口还在，用户看到的就是「按 ESC 毫无反应」，
-     连提示条都不会出现（因为代码认为「已经处理过了」）。这就是「没有提示条」的原因。
-     现在直接走 IPC：close 走正常关闭流程；400ms 后还在就 destroy（无条件销毁）。
-     两条都失败时，界面上给一条谁都看得见的横幅，而不是一个 3 秒就消失的 toast。 */
+  /* ==================== 退出 ====================
+     v4.4.6 起「关窗」这件事只剩一条合法出口：宿主官方 Exit 消息。
+     v4.4.1~4.4.5 曾按「插件是独立 BrowserWindow」的判断去调 IPC 的
+     close()/destroy()，而 app.asar 的 `plugin.window.` handler 用
+     BrowserWindow.fromWebContents(event.sender) 取窗口 —— 预览形态下拿到的是
+     **Eagle 主窗口**，于是「按 ESC 把 Eagle 一起关了 / 最小化的 Eagle 打不开」。
+     现在 bridge.js 在 IPC 入口硬拒所有窗口生命周期方法（IPC_WINDOW_DENY），
+     退出走 Bridge.hostExit() → 主窗口 leaveDetailMode() 卸载 webview，零窗口 API。
+     真到了「Exit 发了还在」的程度，界面上给一条常驻横幅（exitFailBanner），
+     而不是一个 3 秒就消失的 toast。 */
   function exitFailBanner(text) {
     let box = $('#exitFail');
     if (!box) {
       box = U.el('div', { class: 'exit-fail', id: 'exitFail' });
+      /* v4.5.1：删掉「最小化」按钮。它调的是 window.eagle.window.minimize()，
+         而预览形态下这个 API 指向 **Eagle 主窗口** —— 一键把 Eagle 缩走，
+         正是 4.4.1~4.4.5 那几轮事故的同款。出口只留「再试一次」与「知道了」，
+         真正关窗走宿主 Exit（Bridge.hostExit）。 */
       box.innerHTML = '<span class="xf-text"></span>'
         + '<button class="ghost-btn xs" data-xf="retry">再试一次</button>'
-        + '<button class="ghost-btn xs" data-xf="min">最小化</button>'
         + '<button class="ghost-btn xs" data-xf="hide">知道了</button>';
       document.body.appendChild(box);
       box.addEventListener('click', (e) => {
@@ -6580,10 +6659,6 @@
         if (!b) return;
         const act = b.getAttribute('data-xf');
         if (act === 'retry') { box.hidden = true; exitPlugin(); return; }
-        if (act === 'min') {
-          try { window.eagle.window.minimize(); } catch (err) { /* ignore */ }
-          return;
-        }
         box.hidden = true;
       });
     }
@@ -6604,6 +6679,10 @@
     try { persist(true); } catch (e) { console.warn('[exit] 保存失败', e); }
     /* v4.5.0：退出即把待写投影全部落盘，OB 端不留「差一次同步」的尾巴 */
     try { if (typeof Projection !== 'undefined') Projection.flush(); } catch (e) { /* ignore */ }
+    /* v4.5.1：这里**只落盘、不停表**。
+       宿主 Exit 有可能没生效（用户又按一次 ESC 之外的路径、或宿主忙），
+       那种情况下插件其实还开着 —— 提前把定时器停掉，同步就再也不跑了。
+       真正停表放在 beforeunload / pagehide：那是页面确定要走的时刻。 */
     /* v4.4.4：数据已落盘，摘掉自己注册的 beforeunload —— 页面不再挂着卸载
        拦截，600ms 兜底的 window.close() 才不会被 Chromium 挡下。
        只摘我们自己这一条，不影响 Eagle 宿主自己的卸载逻辑。 */

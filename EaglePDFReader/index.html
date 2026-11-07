@@ -685,9 +685,10 @@
 <div class="toast-wrap" id="toastWrap"></div>
 
 <script src="vendor/pdfjs/pdf.min.js"></script>
-<script src="vendor/pdflib/pdf-lib.min.js"></script>
-<!-- v4.2.3：拼音模糊搜索（window.pinyinPro.match），加载失败时搜索自动退回纯子串匹配 -->
-<script src="vendor/pinyin-pro.js"></script>
+<!-- v4.5.1：pdf-lib（525KB）与 pinyin-pro（326KB）不再阻塞首屏。
+     js/vendorload.js 在空闲时把它们拉下来；没就绪时拼音搜索退回子串匹配、
+     PDF 回写暂时跳过，加载完自动生效（见 js/vendorload.js 顶部说明）。 -->
+<script src="js/vendorload.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/markdown.js"></script>
 <script src="js/store.js"></script>

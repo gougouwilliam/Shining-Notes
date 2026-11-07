@@ -51,13 +51,18 @@ section('拼音搜索（静态 + vendor 真跑）');
   ok(/HAS_LATIN = \/\[a-z\]\/i/.test(E), '纯中文词跳过拼音匹配（性能）');
   ok(/function matchScore\(hay, tokens\)/.test(E) && E.indexOf('if (sc < 0) return null') > 0,
     '多关键词 AND 语义保留（打分制）');
-  ok(E.indexOf('CHAR_ESC') > 0 && /marks\[i \+ k\] = true/.test(E) && /PinyinMatch\(s, t\)/.test(E),
+  ok(E.indexOf('CHAR_ESC') > 0 && /marks\[i \+ k\] = true/.test(E) && /pm\(s, t\)/.test(E),
     '高亮按下标合并（拼音命中的字也能亮）');
   ok(E.indexOf('支持拼音') > 0, '搜索框占位文案标注拼音能力');
 
   const H = read('index.html');
-  ok(H.indexOf('vendor/pinyin-pro.js') > 0 && H.indexOf('vendor/pinyin-pro.js') < H.indexOf('js/wikilink.js'),
-    'index.html 在 wikilink/editor 之前引入 pinyin-pro');
+  /* v4.5.1：pinyin-pro 不再阻塞首屏，改由 js/vendorload.js 空闲加载。
+     断言换成「不能是同步 script + 必须挂进懒加载清单」，语义（编辑器之前就绪）不变。 */
+  const VL = read('js/vendorload.js');
+  ok(H.indexOf('js/vendorload.js') > 0 && H.indexOf('<script src="vendor/pinyin-pro.js"') < 0,
+    'index.html 不再同步加载 pinyin-pro（v4.5.1 懒加载）');
+  ok(VL.indexOf('vendor/pinyin-pro.js') > 0 && VL.indexOf('window.pinyinPro') > 0,
+    'vendorload 负责按需加载 pinyin-pro，并就绪后自动生效');
   ok(fs.existsSync(path.join(ROOT, 'vendor', 'pinyin-pro.js')), 'vendor/pinyin-pro.js 存在');
 
   /* vendor 库真跑一遍（就是插件里那份文件） */

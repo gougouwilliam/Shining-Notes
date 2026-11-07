@@ -52,7 +52,10 @@ section('[[ 独立搜索窗（大窗右侧）');
 section('相关度打分 scoreOne / matchScore');
 {
   const E = read('EaglePDFReader/js/editor.js');
-  const i0 = E.indexOf('const SEP_CHARS');
+  /* v4.5.1：拼音库改成惰性取值（pinyinMatch() 每次现查 window.pinyinPro），
+     所以沙箱从 pinyinMatch 定义处切起，并把 window 一起喂进去 —— 顺带把
+     「库晚到也能生效」这条行为一起测了。 */
+  const i0 = E.indexOf('function pinyinMatch()');
   const i1 = E.indexOf('const CHAR_ESC');
   ok(i0 > 0 && i1 > i0, '打分函数块可提取');
   let PinyinMatch = null;
@@ -61,9 +64,10 @@ section('相关度打分 scoreOne / matchScore');
     PinyinMatch = pp.match || null;
   } catch (e) { /* 库缺失也能测子串逻辑 */ }
   const HAS_LATIN = /[a-z]/i;
-  const sandbox = new Function('PinyinMatch', 'HAS_LATIN',
+  const sandbox = new Function('window',
     E.slice(i0, i1) + '\nreturn { scoreOne: scoreOne, matchScore: matchScore };');
-  const { scoreOne, matchScore } = sandbox(PinyinMatch, HAS_LATIN);
+  const { scoreOne, matchScore } = sandbox({ pinyinPro: { match: PinyinMatch } });
+  ok(HAS_LATIN.test('a'), 'HAS_LATIN 常量仍在（拉丁字母判定）');
 
   /* 子串打分 */
   ok(scoreOne('历史笔记', '历') === 100 ? false : scoreOne('历史笔记', '历史') === 80, '多字符开头命中 = 80');

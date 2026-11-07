@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.5.0）
+# 功能自查对照表（v4.5.1）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -10,7 +10,7 @@
 | 🟡 | 实现点齐，但没有自动测试（多半是纯界面行为） |
 | ❌ | 找不到实现点（要修） |
 
-**合计 117 项：✅ 84 · 🟡 33 · ❌ 0**
+**合计 122 项：✅ 91 · 🟡 31 · ❌ 0**
 
 ## A. 打开与切换
 
@@ -18,7 +18,7 @@
 | --- | --- | --- | --- |
 | ✅ | 空格预览直接进插件 | `js/bridge.js` `js/app.js` | 3 处 |
 | ✅ | 插件窗口载入当前选中项 | `js/bridge.js` `js/app.js` | 1 处 |
-| ✅ | 启动器（LB7NOTEWB01）单图标进工作台 | `EagleNoteWorkbench/wb-launch.js` `EagleNoteWorkbench/manifest.json` | 47 处 |
+| ✅ | 启动器（LB7NOTEWB01）单图标进工作台 | `EagleNoteWorkbench/wb-launch.js` `EagleNoteWorkbench/manifest.json` | 48 处 |
 | 🟡 | 从系统拖入 PDF（getPathForFile 兜底） | `js/app.js` | — |
 | ✅ | 工作台 / 阅读界面互切 | `index.html` `js/app.js` | 46 处 |
 | ✅ | 最近阅读 → 直接进那篇 | `js/store.js` `js/workbench.js` | 1 处 |
@@ -29,10 +29,10 @@
 | --- | --- | --- | --- |
 | 🟡 | 页码跳转 / 上一页下一页 | `js/app.js` | — |
 | 🟡 | 缩放（加减 / 适宽 / Ctrl+滚轮） | `js/app.js` `js/viewer.js` | — |
-| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 74 处 |
+| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 75 处 |
 | ✅ | 缩略图惰性渲染 | `js/app.js` | 13 处 |
 | ✅ | 目录 / 缩略图弹出面板（v4.1，原左栏） | `js/app.js` `css/app.css` | 5 处 |
-| ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 64 处 |
+| ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 65 处 |
 | 🟡 | 搜索临时标记不进 PDF | `css/app.css` `js/app.js` | — |
 | 🟡 | 内部链接翻页 / 外部链接三选一 | `js/app.js` | — |
 | ✅ | 明暗主题切换（记忆） | `js/store.js` `js/app.js` | 1 处 |
@@ -53,7 +53,7 @@
 | ✅ | 五色色板 | `index.html` | 1 处 |
 | ✅ | 双击编辑备注 / Ctrl+Enter 保存 | `js/annotations.js` `js/editor.js` | 44 处 |
 | ✅ | 撤销（Ctrl+Z） | `js/undo.js` `js/app.js` | 21 处 |
-| 🟡 | 高亮写进 PDF 文件本身 | `js/pdfwrite.js` `js/app.js` | — |
+| ✅ | 高亮写进 PDF 文件本身 | `js/pdfwrite.js` `js/app.js` | 3 处 |
 | 🟡 | 同步到 Eagle 条目注释 | `js/app.js` `js/bridge.js` | — |
 
 ## D. 右栏
@@ -123,7 +123,7 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | md 投影：锚点 + 手改回读 + 冲突备份 | `js/projection.js` | 70 处 |
+| ✅ | md 投影：锚点 + 手改回读 + 冲突备份 | `js/projection.js` | 72 处 |
 | ✅ | 空内容不建 md，内容清空自动回收（手记保留） | `js/projection.js` | 8 处 |
 | ✅ | 删光内容回收修复：插件旧注释值不挡回收（hash 比对），仅 md 独有文本保留 | `js/projection.js` | 3 处 |
 | ✅ | Eagle 注释栏双向同步（eagle:ec 锚点 + 官方 API 写回） | `js/projection.js` | 2 处 |
@@ -143,7 +143,7 @@
 | ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 116 处 |
 | ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 116 处 |
 | ✅ | v4.4.7 退出走宿主 Exit 消息，零窗口 API（绝不销毁 Eagle 主窗口） | `js/bridge.js` `js/app.js` | 25 处 |
-| ✅ | 关不掉时常驻横幅 + 再试/最小化 | `js/app.js` `css/app.css` | 1 处 |
+| ✅ | 关不掉时常驻横幅 + 再试/最小化 | `js/app.js` `css/app.css` | 3 处 |
 | 🟡 | ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役） | `js/app.js` | — |
 | ✅ | v4.4.1 关窗身份守卫：绝不把 close/destroy 施加到 Eagle 主窗口 | `js/winguard.js` `js/bridge.js` `js/app.js` | 1 处 |
 | ✅ | v4.4.1 宿主恢复兜底：只 restore/show，不 minimize/hide | `js/bridge.js` `js/app.js` | 12 处 |
@@ -163,8 +163,8 @@
 | ✅ | v4.4.9 宿主看门狗：webview 消失由主窗口补发 false，三档 remove 防切条目误伤 | `js/bridge.js` | 12 处 |
 | ✅ | Ctrl+W 关闭 | `js/app.js` | 14 处 |
 | 🟡 | 预览模式紧凑布局（mode-preview） | `css/app.css` | — |
-| 🟡 | 窗口底色跟随主题（不闪白） | `js/bridge.js` | — |
-| ✅ | 无边框窗口 + 自绘标题栏 | `js/framewin.js` `js/app.js` | 26 处 |
+| ✅ | 窗口底色跟随主题（不闪白） | `js/bridge.js` | 1 处 |
+| ✅ | 无边框窗口 + 自绘标题栏 | `js/framewin.js` `js/app.js` | 28 处 |
 
 ## J. 数据
 
@@ -177,7 +177,7 @@
 | 🟡 | 换大版本自动清库（migrateEpoch） | `js/store.js` | — |
 | ✅ | 写 PDF 前先备份（pdfbak） | `js/pdfwrite.js` `js/store.js` | 2 处 |
 | ✅ | 清数据连素材副本一起清（media/） | `js/store.js` | 54 处 |
-| ✅ | 运行日志 debug.log（200KB 轮转） | `js/dbg.js` | 25 处 |
+| ✅ | 运行日志 debug.log（200KB 轮转） | `js/dbg.js` | 29 处 |
 
 ## K. 稳定性
 
@@ -189,6 +189,16 @@
 | ✅ | 另存三态（选了 / 取消 / 弹不出来） | `js/saveas.js` | 12 处 |
 | ✅ | 编辑器构造冒烟（防 TDZ 这类错） | `js/editor.js` | 2 处 |
 
+## L. 性能与维护
+
+| | 功能 | 实现位置 | 测试命中 |
+| --- | --- | --- | --- |
+| ✅ | v4.5.1 大块头 vendor 空闲加载（pdf-lib 525KB / pinyin-pro 326KB 移出首屏） | `js/vendorload.js` `js/app.js` | 15 处 |
+| ✅ | v4.5.1 懒加载未就绪时降级、就绪后自动生效（拼音 / PDF 回写） | `js/editor.js` `js/pdfwrite.js` `js/app.js` | 9 处 |
+| ✅ | v4.5.1 启动耗时埋点：boot.slow（≥60ms 的步骤）+ boot.done 汇总 | `js/app.js` | 1 处 |
+| ✅ | v4.5.1 退出即停后台定时器（显存轮询 / 投影回读 / 删除对账） | `js/app.js` | 6 处 |
+| ✅ | v4.5.1 安装包排除 README/FEATURES，部署脚本清理陈旧文件（保留 window-state.json） | `pack-plugin.py` `deploy-plugin.py` | 1 处 |
+
 ## 🟡 有实现、但没有自动测试的项
 
 * 从系统拖入 PDF（getPathForFile 兜底）
@@ -199,7 +209,6 @@
 * 摘录并笔记（直接开大笔记框）
 * 复制（CJK 字间空格清洗）
 * 划词翻译（就近弹层）
-* 高亮写进 PDF 文件本身
 * 同步到 Eagle 条目注释
 * 卡片 OCR
 * 卡片翻译
@@ -219,7 +228,6 @@
 * v4.4.7 预览 ESC 单一出口：一条宿主 Exit + 600ms 串行补发
 * v4.4.9 启动 false→true 串行、退出先确认恢复再下线桥、最后才发 Exit
 * 预览模式紧凑布局（mode-preview）
-* 窗口底色跟随主题（不闪白）
 * 每篇一份 docs/<id>.json
 * 换大版本自动清库（migrateEpoch）
 * 启动分步执行，失败只跳过那一步

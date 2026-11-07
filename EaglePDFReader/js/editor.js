@@ -34,10 +34,15 @@ const NoteEditor = (function () {
      v4.2.3：拼音模糊搜索。vendor/pinyin-pro.js 提供 window.pinyinPro.match，
        全拼 / 首字母 / 混合都认（「sa」→「撒」，「ls」→「历史」），返回命中的字符下标。
        库没加载成功就自动退回纯子串匹配，不报错。 */
-  const PinyinMatch = (function () {
-    try { return (typeof window !== 'undefined' && window.pinyinPro && window.pinyinPro.match) || null; }
-    catch (e) { return null; }
-  })();
+  /* v4.5.1：改成**每次现查**。pinyin-pro 已从首屏移到空闲时加载（js/vendorload.js），
+     以前这里是加载期就固定下来的常量 —— 库晚到就永远拿不到，拼音搜索会一直降级。
+     现查的代价是一次属性读取，换来「懒加载完成后自动生效、不用重载页面」。 */
+  function pinyinMatch() {
+    try {
+      const pp = (typeof window !== 'undefined') ? window.pinyinPro : null;
+      return (pp && pp.match) || null;
+    } catch (e) { return null; }
+  }
   const HAS_LATIN = /[a-z]/i;
 
   /* v4.2.4：相关度打分。之前打一个「c」—— 中段子串和任意位置的拼音首字母
@@ -56,9 +61,10 @@ const NoteEditor = (function () {
       if (t.length >= 2) return boundary ? 80 : 60;
       return boundary ? 70 : 20;
     }
-    if (PinyinMatch && HAS_LATIN.test(t)) {
+    const pm = pinyinMatch();
+    if (pm && HAS_LATIN.test(t)) {
       try {
-        const m = PinyinMatch(s, String(token));
+        const m = pm(s, String(token));
         if (Array.isArray(m) && m.length) {
           const first = m[0];
           const boundary = first === 0 || SEP_CHARS.indexOf(s[first - 1]) >= 0;
@@ -101,9 +107,10 @@ const NoteEditor = (function () {
         hit = true;
         i += Math.max(1, tl.length);
       }
-      if (!hit && PinyinMatch && HAS_LATIN.test(t)) {
+      if (!hit && HAS_LATIN.test(t)) {
+        const pm = pinyinMatch();
         try {
-          const idx = PinyinMatch(s, t);
+          const idx = pm ? pm(s, t) : null;
           if (Array.isArray(idx)) idx.forEach((x) => { if (x >= 0 && x < s.length) marks[x] = true; });
         } catch (e) { /* 拼音匹配失败就只亮子串 */ }
       }

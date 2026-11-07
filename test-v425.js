@@ -72,12 +72,13 @@ ok(/if \(noteSearch\.q\.trim\(\)\) \{ noteSearchClear\(\); \}/.test(A), '换文�
 console.log('== 7. 打分行为回归（模块搬家后语义不变）==');
 /* 与 test-v424 相同的提取方式：SEP_CHARS → CHAR_ESC 之间是 scoreOne + matchScore */
 try {
-  const i0 = E.indexOf('const SEP_CHARS');
+  /* v4.5.1：pinyin-pro 改为空闲加载，editor.js 里是惰性取值 pinyinMatch()，
+     所以切块起点跟到 pinyinMatch 定义处，并把 window 喂进沙箱。 */
+  const i0 = E.indexOf('function pinyinMatch()');
   const i1 = E.indexOf('const CHAR_ESC');
   const pp = require('./EaglePDFReader/vendor/pinyin-pro.js');
-  const HAS_LATIN = /[a-z]/i;
-  const f = new Function('PinyinMatch', 'HAS_LATIN', E.slice(i0, i1) + '\nreturn { scoreOne, matchScore };');
-  const { scoreOne, matchScore } = f(pp.match || pp.default, HAS_LATIN);
+  const f = new Function('window', E.slice(i0, i1) + '\nreturn { scoreOne, matchScore };');
+  const { scoreOne, matchScore } = f({ pinyinPro: { match: pp.match || pp.default } });
   ok(scoreOne('历史', '历史') === 80, '全文子串开头命中 = 80');
   ok(scoreOne('历史', 'lishi') === 75, '拼音全拼开头命中 = 75');
   ok(matchScore('撒哈拉的故事', ['sa']) && !matchScore('撒哈拉的故事', ['sa']).weak, '拼音「sa」搜「撒」强命中');
