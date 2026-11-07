@@ -198,9 +198,12 @@
             时来不及恢复的残留，也满足「重启 Eagle 后再恢复」；
          ② 再屏蔽 Eagle 宿主菜单快捷键，避免宿主 ESC 与插件 ESC 双份触发。
          setIgnoreMenuShortcuts 是 webContents 运行时状态、不写盘，
-         Eagle 重启本身就会复位，这里是第二重保障。 */
-      await step('快捷键隔离', () => {
+         Eagle 重启本身就会复位，这里是第二重保障。
+         v4.4.9：两条 IPC 改成串行 —— 先等 false 的回执落地，再发 true，
+         杜绝「先发的 false 晚到，把刚设的 true 覆盖回 false」的乱序。 */
+      await step('快捷键隔离', async () => {
         try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
+        try { await Bridge.shortcutsSettled(200); } catch (e) { /* ignore */ }
         try { Bridge.setHostShortcuts(true); } catch (e) { /* ignore */ }
       });
       await step('同步窗口底色', () => Bridge.syncWindowBg(document.documentElement.dataset.theme));
@@ -6607,8 +6610,17 @@
       /* 连按 ESC 只发一轮请求；1.2s 后可重试 */
       if (now - exitSentAt < 1200) { exiting = false; return; }
       exitSentAt = now;
-      /* 用户要求：插件退出即恢复 Eagle 快捷键 */
+      /* 用户要求：插件退出即恢复 Eagle 快捷键。
+         v4.4.9：以前恢复与宿主 Exit 抢跑，webview 一卸载那条 IPC 就可能被吞。
+         现在先等 false 的回执落地（最多 200ms），再显式下线宿主 ESC 桥
+         （桥在主窗口再补发一次 false，无条件），最后才发 Exit；桥的看门狗
+         是第三重。三条都只走 webContents IPC / 主窗口 DOM，零窗口 API。 */
       try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
+      try {
+        await Bridge.shortcutsSettled(200);
+        dbg('shortcuts.restore', { phase: 'exit' });
+      } catch (e) { /* ignore */ }
+      try { if (Bridge.installHostEscBridge) Bridge.installHostEscBridge(false); } catch (e) { /* ignore */ }
       try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
       let sent = false;
       try { sent = !!(Bridge.hostExit && Bridge.hostExit()); } catch (e) { /* ignore */ }

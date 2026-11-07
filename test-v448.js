@@ -157,7 +157,7 @@ console.log('—— ④ 宿主 ESC 转发桥行为级 ——');
   const h = mockHost();
   const { B } = loadBridge();
   const code = B.hostEscBridgeCode(8, true);
-  ok(vm.runInNewContext(code, h.makeCtx()) === 'installed', '桥安装成功');
+  ok(/^installed/.test(vm.runInNewContext(code, h.makeCtx())), '桥安装成功');
   ok(!!h.Ls.keydown && !!h.window.__eaglenoteEscBridge, 'keydown 捕获监听 + 幂等句柄都在');
 
   h.document.activeElement = {};              // 焦点仍在主窗口 = 现场形态

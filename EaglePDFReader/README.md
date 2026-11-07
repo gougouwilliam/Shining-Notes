@@ -4,7 +4,26 @@
 3.3.0 起，摘录的高亮会**同步写进 PDF 文件本身**（换了阅读器也还在），顶栏是**常驻的全文搜索框**，并新增**视频笔记**。
 零外部依赖，全部资源（PDF.js、pdf-lib、CJK 字符映射、标准字体）随插件本地打包，**除划词翻译外不联网**。
 
-当前版本 **4.4.8**。
+当前版本 **4.4.9**。
+
+---
+
+## 更新记录 · 4.4.9（快捷键隔离加固：确认送达 + 生命周期自愈）
+
+> 需求复述：**打开插件就关掉 Eagle 自己的快捷键**（怕和插件冲突）、**关闭插件立刻恢复**、**开着插件直接关 Eagle、再开 Eagle 时也要恢复**。
+> 这套机制 4.4.6 已经上线（现场日志里每次打开是 `shortcuts.set {ignored:false}` → `{ignored:true}`，退出是 `{ignored:false}`），本次不是重做，而是把「发出就算」改成「确认送达 + 三重兜底」。
+
+- **① 回执与补发**（`bridge.js`）：`setHostShortcuts()` 现在每次调用写 `shortcuts.set`（发出）、`shortcuts.ok`（IPC 无异常落地）、`shortcuts.err`（带错误文本），失败自动补发一次并写 `shortcuts.retry`。新增 `shortcutsSettled(ms)` 提供可 `await` 的送达点，**带超时**——宁可少等，绝不让一次失联的 IPC 卡住启动或退出。同步返回 `true` 的旧契约不变（含义是「已发出」）。Eagle 没有公开的 `isIgnoringMenuShortcuts` getter，所以 `ok` 表示送达成功，不是状态读回。
+- **② 启动串行**：`app.js` 的「快捷键隔离」步骤改成 `发 false → await 落地 → 发 true`。以前两条 IPC 连续盲发，理论上存在先发的 `false` 晚到、把刚设的 `true` 覆盖回去的乱序风险；先发 `false` 仍承担「自愈上次残留」的职责。
+- **③ 退出不再抢跑**：`exitPlugin()` 预览分支改成 `发 false → await 落地（最多 200ms）→ 显式下线宿主 ESC 桥 → 才发 Exit`。以前恢复与 `hostExit()` 并发，webview 一卸载那条 IPC 就可能被吞掉。
+- **④ 宿主看门狗（本次关键，解决第③个场景）**：`setIgnoreMenuShortcuts` 是 **webContents 运行时状态、不写盘**，Eagle 进程真重启必然复位；但如果用户「关窗口到托盘」、主窗口 webContents 还活着，而 guest 的 `beforeunload` / `pagehide` 又没来得及发 `false`，`true` 就会残留，Eagle 快捷键全部失灵。现在注入主窗口的 ESC 桥兼任看门狗：每秒检查插件 `<webview>` 是否还在，一旦消失就由**主窗口自己**经 `plugin.window.webContents.` 补发 `false`；结果写在 `window.__eaglenoteShortcutRestore` 便于排查。三档 `remove()` 避免误伤：
+  - `remove(0)` 新桥覆盖旧桥 —— 只摘监听，绝不恢复（新插件马上要设 `true`）；
+  - `remove(1)` 看门狗 / 按键时发现 webview 消失 —— 先确认没有其它插件 webview 才恢复，**切条目时不冲掉新 guest 刚设的 `true`**；
+  - `remove(2)` 插件主动退出、显式下线 —— 无条件恢复（此时 webview 可能还没被卸载）。
+  - 主窗口若没暴露 `ipcRenderer` 就静默降级，`no-ipc` 标记可查；guest 侧三条恢复与「重启复位 + 启动自愈」仍是独立的两重保障。
+- **零窗口 API 红线不变**：所有新增通道都只走 `webContents` IPC / 主窗口 DOM 层，`IPC_WINDOW_DENY` 硬拦截照旧，ESC 仍无条件吞掉、绝不交还宿主，退出前落盘不变。
+- **快捷键冲突面说明**：`setIgnoreMenuShortcuts(true)` 屏蔽的是 **Eagle 应用菜单的加速器**（Ctrl+N / Ctrl+F / ESC 等），这正是与插件冲突的那一层；插件 `<webview>` 有焦点时，主窗口的普通 `keydown` 本就不会收到按键。Eagle 给独立插件窗口挂的 `app/js/utils/ignoreMenuShortcuts.js` 只作用于那个独立窗口自己的 webContents，不会反过来覆盖主窗口的设置。
+- **版本与验证**：双 manifest 4.4.9；新增 `test-v449.js`（vm 真跑注入脚本，覆盖回执/重试/超时、启动与退出顺序、看门狗 6 个场景、零窗口 API），全量 55 套件全绿，`verify-features` ❌0。`debug.log` 判据：打开插件应看到 `shortcuts.set` → `shortcuts.ok` 各两次（先 false 后 true），退出应看到 `shortcuts.restore {phase:"exit"}`；若出现 `shortcuts.err` / `shortcuts.retry` 说明 IPC 曾失联但已补发。`hostesc.install.ok {result:"installed:ipc"}` 表示主窗口看门狗确实可用；`installed:no-ipc` 表示主窗口没暴露 `ipcRenderer`，看门狗降级，此时由 guest 侧三条恢复与「重启复位 + 启动自愈」兜底。另可在 Eagle 主窗口控制台读 `window.__eaglenoteShortcutRestore` 查看门狗最后一次结果。
 
 ---
 

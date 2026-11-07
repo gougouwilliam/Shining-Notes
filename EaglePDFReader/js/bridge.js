@@ -1094,23 +1094,58 @@ const Bridge = (function () {
     return hostRendererCall(focusGuestCode(guestWebContentsId()), t);
   }
 
+  /* v4.4.9：ESC 桥同时兼任「快捷键隔离看门狗」。
+     问题：guest 的 beforeunload / pagehide / exitPlugin 都在**即将被卸载**
+     的 renderer 里发 setIgnoreMenuShortcuts(false)，IPC 随时可能被卸载打断；
+     用户「开着插件直接关 Eagle（关到托盘）」时主窗口 webContents 还活着，
+     true 就会残留，Eagle 自己的快捷键全部失灵。
+     对策：把恢复能力放到主窗口 DOM 里 —— 插件 webview 一消失，主窗口
+     自己补发 false。三种模式：
+       remove(0) 新桥覆盖旧桥：只摘监听，绝不恢复（新插件马上要设 true）；
+       remove(1) 看门狗 / 按键时发现 webview 已消失：确认没有其它插件 webview
+                 才恢复，避免切条目时误伤刚启动的新 guest；
+       remove(2) 插件主动退出、显式下线：无条件恢复。
+     全程只用 ipcRenderer.invoke('plugin.window.webContents.')（官方通道、
+     零窗口 API）；主窗口若没暴露 require 就静默降级，guest 侧与重启自愈
+     仍是独立的两重保障。结果写在 window.__eaglenoteShortcutRestore 供排查。 */
   function hostEscBridgeCode(wid, enable) {
     if (!enable) {
-      return "(function(){var b=window.__eaglenoteEscBridge;if(b&&b.remove)b.remove();return 'removed';})();";
+      return "(function(){var b=window.__eaglenoteEscBridge;if(b&&b.remove)b.remove(2);return 'removed';})();";
     }
     return hostScript([
       "if (!wv) return 'no-webview';",
       "var KEY = '__eaglenoteEscBridge';",
-      'var old = window[KEY]; if (old && old.remove) old.remove();',
-      'var alive = true;',
-      'function remove() {',
+      'var old = window[KEY]; if (old && old.remove) old.remove(0);',
+      'var alive = true, timer = null, me = null;',
+      'function pluginStillHere() {',
+      "  var list = document.querySelectorAll('webview');",
+      '  for (var i = 0; i < list.length; i++) {',
+      "    var u = ''; try { u = list[i].getURL ? list[i].getURL() : (list[i].src || ''); } catch (e) {}",
+      "    if (u.indexOf('LB7PDFRDK3QM') >= 0 || u.indexOf('EaglePDFReader') >= 0) return true;",
+      '  }',
+      '  return false;',
+      '}',
+      'function restore(force) {',
+      '  if (!force && pluginStillHere()) { window.__eaglenoteShortcutRestore = "skipped:plugin-alive"; return; }',
+      '  try {',
+      "    var ipc = (typeof require === 'function' && require('electron')) ? require('electron').ipcRenderer : null;",
+      '    if (!ipc || !ipc.invoke) { window.__eaglenoteShortcutRestore = "no-ipc"; return; }',
+      "    var p = ipc.invoke('plugin.window.webContents.', { method: 'setIgnoreMenuShortcuts', value: false });",
+      '    window.__eaglenoteShortcutRestore = "sent";',
+      '    if (p && p.then) p.then(function(){ window.__eaglenoteShortcutRestore = "ok"; },',
+      '      function(e){ window.__eaglenoteShortcutRestore = "err:" + (e && e.message); });',
+      '  } catch (e) { window.__eaglenoteShortcutRestore = "err:" + (e && e.message); }',
+      '}',
+      'function remove(mode) {',
       '  if (!alive) return; alive = false;',
       "  try { document.removeEventListener('keydown', h, true); } catch (e) {}",
-      '  try { delete window[KEY]; } catch (e) { window[KEY] = null; }',
+      '  if (timer) { try { clearInterval(timer); } catch (e) {} timer = null; }',
+      '  if (window[KEY] === me) { try { delete window[KEY]; } catch (e) { window[KEY] = null; } }',
+      '  if (mode) restore(mode === 2);',
       '}',
       'function h(e) {',
       "  if (e.key !== 'Escape' && e.keyCode !== 27) return;",
-      '  if (!document.contains(wv)) { remove(); return; }',
+      '  if (!document.contains(wv)) { remove(1); return; }',
       '  if (document.activeElement === wv) return;',
       "  var ae = document.activeElement;",
       "  if (ae && ae.tagName === 'WEBVIEW') return;",
@@ -1122,8 +1157,15 @@ const Bridge = (function () {
       '  }',
       '}',
       "document.addEventListener('keydown', h, true);",
-      'window[KEY] = { remove: remove, wv: wv };',
-      "return 'installed';"
+      'if (typeof setInterval === "function") timer = setInterval(function(){ if (!document.contains(wv)) remove(1); }, 1000);',
+      'me = { remove: remove, wv: wv };',
+      'window[KEY] = me;',
+      /* 现场诊断：主窗口 renderer 若没暴露 ipcRenderer，看门狗只能降级。
+         把探测结果放进 hostesc.install.ok 的 result，重启实测一眼可判。 */
+      'var hasIpc = false;',
+      'try { hasIpc = !!(typeof require === "function" && require("electron") && require("electron").ipcRenderer); } catch (e) {}',
+      'window.__eaglenoteHostIpc = hasIpc;',
+      "return 'installed:' + (hasIpc ? 'ipc' : 'no-ipc');"
     ].join('\n'), wid);
   }
 
@@ -1198,22 +1240,77 @@ const Bridge = (function () {
      'plugin.window.webContents.' 转发通道，只改快捷键开关，绝不碰窗口生命周期。
      这是 webContents 的**运行时状态、不持久化**，Eagle 重启自动复位；插件
      每次启动还会无条件先发一次 false 做自愈，覆盖「在插件里直接退出 Eagle」
-     导致来不及恢复的情况。 */
+     导致来不及恢复的情况。
+
+     v4.4.9 加固：以前只打一条 shortcuts.set（「我发了」），不记录 IPC 是否
+     落地、退出时又和宿主 Exit 抢跑。现在每次调用都带 shortcuts.ok/err 回执、
+     失败自动补发一次，并由 shortcutsSettled() 提供可 await 的送达点；退出
+     路径先等它落地再发 Exit。另在宿主人 ESC 桥里加了第三重看门狗（见下）。
+     同步返回 true 的旧契约保持不变 —— 含义是「已发出」，送达与否看回执。 */
+  let shortcutSeq = 0;
+  let lastShortcutPromise = Promise.resolve(true);
+
   function setHostShortcuts(ignored) {
     const val = !!ignored;
-    try {
-      if (typeof require !== 'function') return false;
-      const el = require('electron') || {};
-      const ipc = el.ipcRenderer;
-      if (!ipc || typeof ipc.invoke !== 'function') return false;
-      const pending = ipc.invoke('plugin.window.webContents.', {
-        method: 'setIgnoreMenuShortcuts', value: val
+    const seq = ++shortcutSeq;
+    const log = (k, v) => {
+      try { if (typeof Dbg !== 'undefined') Dbg.log(k, v); } catch (e) { /* ignore */ }
+    };
+    log('shortcuts.set', { ignored: val, seq: seq });
+
+    const invokeOnce = () => {
+      try {
+        if (typeof require !== 'function') return Promise.resolve(false);
+        const el = require('electron') || {};
+        const ipc = el.ipcRenderer;
+        if (!ipc || typeof ipc.invoke !== 'function') return Promise.resolve(false);
+        const pending = ipc.invoke('plugin.window.webContents.', {
+          method: 'setIgnoreMenuShortcuts', value: val
+        });
+        if (!pending || typeof pending.then !== 'function') {
+          log('shortcuts.err', { ignored: val, seq: seq, error: 'no-promise' });
+          return Promise.resolve(false);
+        }
+        /* v4.4.6 契约：兜底吞掉任何未被等待的 rejection，绝不制造
+           UnhandledRejection；主链路下面另有自己的 then/catch。 */
+        if (typeof pending.catch === 'function') pending.catch(() => {});
+        return Promise.resolve(pending).then((r) => {
+          /* handler 是通用转发、成功返回 undefined；ok 语义 = IPC 无异常送达，
+             Eagle 没有公开的 isIgnoringMenuShortcuts getter，不做状态读回。 */
+          log('shortcuts.ok', { ignored: val, seq: seq, result: r === undefined ? null : r });
+          return true;
+        }).catch((err) => {
+          log('shortcuts.err', { ignored: val, seq: seq, error: String((err && err.message) || err) });
+          return false;
+        });
+      } catch (e) {
+        log('shortcuts.err', { ignored: val, seq: seq, error: String((e && e.message) || e) });
+        return Promise.resolve(false);
+      }
+    };
+
+    /* 失败只补一次，间隔 80ms 让主进程先消化上一条；绝不无限重试拖住启动/退出 */
+    const chain = invokeOnce().then((ok) => {
+      if (ok) return true;
+      log('shortcuts.retry', { ignored: val, seq: seq });
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(invokeOnce()), 80);
       });
-      if (pending && typeof pending.catch === 'function') pending.catch(() => {});
-      try { if (typeof Dbg !== 'undefined') Dbg.log('shortcuts.set', { ignored: val }); } catch (e) { /* ignore */ }
-      return true;
-    } catch (e) { return false; }
+    });
+    lastShortcutPromise = chain;
+    return true;
   }
+
+  /* 等最后一次快捷键 IPC 落地。带超时：宁可少等，也不能让启动或退出被
+     一次失联的 IPC 卡死；超时也不致命，另有宿主看门狗与重启自愈。 */
+  function shortcutsSettled(ms) {
+    const limit = Math.max(0, Number(ms) || 200);
+    const p = Promise.resolve(lastShortcutPromise).catch(() => false);
+    const timeout = new Promise((r) => setTimeout(() => r(false), limit));
+    return Promise.race([p, timeout]);
+  }
+
+  function restoreHostShortcuts() { return setHostShortcuts(false); }
 
   /* 把 dataURL 图片写入系统剪贴板（Electron 的 clipboard 比 navigator.clipboard 可靠） */
   function copyImageDataUrl(dataUrl) {
@@ -1373,6 +1470,8 @@ const Bridge = (function () {
     hostEscBridgeCode,
     initHostEscReceiver,
     setHostShortcuts,
+    shortcutsSettled,
+    restoreHostShortcuts,
     focusParent,
     closeVerdict,
     windowIdentity,

@@ -134,13 +134,24 @@ console.log('—— ⑤ 快捷键隔离：开启即关、退出即恢复、启�
   const fnSrc = extractFn(BR, 'setHostShortcuts');
   ok(!!fnSrc && /setIgnoreMenuShortcuts/.test(fnSrc), '走官方 webContents.setIgnoreMenuShortcuts');
   ok(/plugin\.window\.webContents\./.test(fnSrc), '走 plugin.window.webContents. 通道（非窗口生命周期）');
-  const calls = [];
+  ok(/shortcuts\.ok/.test(fnSrc) && /shortcuts\.err/.test(fnSrc) && /shortcuts\.retry/.test(fnSrc),
+    'v4.4.9：发出之外还有落地回执 / 失败日志 / 自动补发');
+  /* v4.4.9：setHostShortcuts 现在依赖模块级「序号 + 最后一次 Promise」，
+     旧的「抠出单个函数 new Function」会丢闭包，改用 vm 加载完整 bridge.js。 */
+  const vm = require('vm');
+  const calls = [], logs = [];
   const ipc = { invoke: (ch, params) => { calls.push([ch, params]); return Promise.resolve(); } };
-  const fn = new Function('Dbg', 'require', fnSrc + '\nreturn setHostShortcuts;')(
-    { log() {} }, () => ({ ipcRenderer: ipc }));
-  ok(fn(true) === true && calls[0][1].method === 'setIgnoreMenuShortcuts' && calls[0][1].value === true,
+  const ctx = {
+    console, Promise, Number, isFinite, setTimeout,
+    window: { windowID: 8 }, document: { hasFocus: () => false },
+    require: (m) => m === 'electron' ? { ipcRenderer: ipc } : (() => { throw new Error('no ' + m); })(),
+    Dbg: { log: (k, v) => logs.push([k, v]) }
+  };
+  vm.createContext(ctx);
+  const B = vm.runInContext(BR + '\n;Bridge', ctx);
+  ok(B.setHostShortcuts(true) === true && calls[0][1].method === 'setIgnoreMenuShortcuts' && calls[0][1].value === true,
     '插件开启 → ignored=true（关掉 Eagle 菜单快捷键）');
-  ok(fn(false) === true && calls[1][1].value === false,
+  ok(B.setHostShortcuts(false) === true && calls[1][1].value === false,
     '插件关闭 → ignored=false（恢复 Eagle 快捷键）');
   ok(/pending\.catch/.test(fnSrc), 'IPC reject 被吞掉，不制造 UnhandledRejection');
   const bootIdx = APP.indexOf("await step('连接 Eagle'");
