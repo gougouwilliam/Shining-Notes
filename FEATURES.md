@@ -53,7 +53,7 @@
 | ✅ | 五色色板 | `index.html` | 1 处 |
 | ✅ | 双击编辑备注 / Ctrl+Enter 保存 | `js/annotations.js` `js/editor.js` | 44 处 |
 | ✅ | 撤销（Ctrl+Z） | `js/undo.js` `js/app.js` | 21 处 |
-| ✅ | 高亮写进 PDF 文件本身 | `js/pdfwrite.js` `js/app.js` | 3 处 |
+| ✅ | 高亮写进 PDF 文件本身 | `js/pdfwrite.js` `js/app.js` | 4 处 |
 | 🟡 | 同步到 Eagle 条目注释 | `js/app.js` `js/bridge.js` | — |
 
 ## D. 右栏
