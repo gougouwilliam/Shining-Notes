@@ -136,7 +136,7 @@ ok(has(BR, "plugin.window."), 'bridge 保留 plugin.window. 通道作兜底（�
 ok(has(BR, "require('@electron/remote')"), '关窗优先走 @electron/remote');
 ok(has(BR, 'function closeSelf()') && has(BR, 'w.close()'), 'closeSelf 调真正的 BrowserWindow.close()');
 ok(has(BR, 'function destroySelf()') && has(BR, 'w.destroy()'), 'destroySelf 调 BrowserWindow.destroy()');
-ok(has(BR, "return ipcWindow('close');"), '拿不到 remote 时仍退回 IPC');
+ok(has(BR, 'IPC_WINDOW_DENY'), 'v4.4.6：关闭类 IPC 已被硬拦截');
 ok(has(BR, 'closeSelf,') && has(BR, 'destroySelf,'), '两者都从 Bridge 导出');
 ok(has(BR, 'function focusParent('), '退出前能把 Eagle 主窗口叫回来（不再落到「最小化的 Eagle」）');
 ok(has(BR, 'focusParent,'), 'focusParent 已导出');
@@ -145,7 +145,7 @@ ok(has(BR, 'function openPath('), '片段「打开」需要 shell.openPath');
 const APP = read('EaglePDFReader/js/app.js');
 ok(has(APP, 'function exitFailBanner('), '关不掉时给常驻横幅，而不是静默什么都不发生');
 ok(has(APP, 'Bridge.closeSelf'), '退出先试 close');
-ok(has(APP, 'Bridge.destroySelf'), '再试 destroy');
+ok(!has(APP, 'Bridge.destroySelf()'), 'v4.4.6：退出流程不再 destroy 主窗口');
 ok(has(APP, 'window.__escHandledAt = Date.now()'), 'app.js 认领 ESC 时打时间戳');
 ok(has(APP, "'Ctrl+W'") || has(APP, 'Ctrl+W'), 'Ctrl+W 也能退出');
 ok(!has(APP, 'visibilityState === \'hidden\''), '不再把「藏起来」误判成「已关闭」');

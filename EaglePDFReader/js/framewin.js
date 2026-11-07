@@ -118,34 +118,26 @@
     setTimeout(() => refresh(bar), 260);
   }
 
-  /* 关窗（v3.34）：✕ 和 Ctrl+W 必须同一条路。
-     以前这里是 `window.close()` —— 在 Eagle 的插件窗口里是空操作，点了没反应。
-     App.exit() 会顺带存草稿，然后 close → 400ms 后还在就 destroy。 */
+  /* 关窗（v4.4.6）：✕ 和 Ctrl+W 必须同一条路，且只剩一条路。
+     预览插件跑在 Eagle 主窗口的 webview 里，任何 remote / IPC 的
+     close|destroy 都会经 BrowserWindow.fromWebContents(sender) 落到主窗口上。
+     原来的 closeSelf → destroySelf → act('close') → window.close 四层兜底
+     全部删除，统一交给 App.exit()（内部走宿主的 "Exit" 消息）。 */
   function closeSelf() {
     const app = global.App;
     if (app && typeof app.exit === 'function') {
-      try { app.exit(); log({ act: 'close', via: 'App.exit' }); return true; } catch (e) { /* 落到下面的兜底 */ }
+      try { app.exit(); log({ act: 'close', via: 'App.exit' }); return true; } catch (e) { /* ignore */ }
     }
-    const br = global.Bridge;
+    /* 极端情况 App 还没挂上：只通知宿主，绝不碰窗口 API */
     try {
-      if (br && typeof br.closeSelf === 'function' && br.closeSelf()) {
-        setTimeout(() => { try { if (br.destroySelf) br.destroySelf(); } catch (e) { /* ignore */ } }, 400);
-        log({ act: 'close', via: 'Bridge.closeSelf' });
+      if (global.Bridge && typeof global.Bridge.hostExit === 'function') {
+        global.Bridge.hostExit();
+        log({ act: 'close', via: 'Bridge.hostExit' });
         return true;
       }
     } catch (e) { /* ignore */ }
-    /* v4.4.1：下面两条是绕过 Bridge 守卫的兜底链路（remote/IPC close、
-       window.close）。预览 webview 形态下它们同样可能关到 Eagle 主窗口，
-       所以先过一次身份裁决，守卫不过就直接放弃，绝不落到这两条路上。 */
-    let v = null;
-    try { v = (global.Bridge && global.Bridge.closeVerdict) ? global.Bridge.closeVerdict() : null; } catch (e) { /* ignore */ }
-    if (v && !v.allow) { log({ act: 'close', blocked: v.code }); return false; }
-    if (act('close')) {
-      setTimeout(() => { try { if (global.Bridge && global.Bridge.destroySelf) global.Bridge.destroySelf(); } catch (e) { /* ignore */ } }, 400);
-      return true;
-    }
-    /* 最后一手：老版本 Eagle 里 window.close() 仍然有效（和 exitPlugin 里的②同一考虑） */
-    try { global.close(); log({ act: 'close', via: 'window.close' }); return true; } catch (e) { return false; }
+    log({ act: 'close', blocked: 'no-safe-exit' });
+    return false;
   }
 
   function init() {

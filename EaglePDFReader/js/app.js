@@ -154,6 +154,16 @@
     (async () => {
       await step('初始化桥接', () => Bridge.initHooks());
       await step('连接 Eagle', () => Bridge.ready());
+      /* v4.4.6：插件打开期间独占快捷键。
+         ① 先无条件恢复一次 —— 自愈上次异常退出 / 在插件界面直接退出 Eagle
+            时来不及恢复的残留，也满足「重启 Eagle 后再恢复」；
+         ② 再屏蔽 Eagle 宿主菜单快捷键，避免宿主 ESC 与插件 ESC 双份触发。
+         setIgnoreMenuShortcuts 是 webContents 运行时状态、不写盘，
+         Eagle 重启本身就会复位，这里是第二重保障。 */
+      await step('快捷键隔离', () => {
+        try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
+        try { Bridge.setHostShortcuts(true); } catch (e) { /* ignore */ }
+      });
       await step('同步窗口底色', () => Bridge.syncWindowBg(document.documentElement.dataset.theme));
 
       /* v4.3.0：Obsidian 同步复活 —— 原「知识库同步钩子」步骤以双向形态回归。
@@ -730,12 +740,18 @@
     }, true);
 
     bindDropZone();
-    /* v4.4.4：改成具名监听并留下摘钩句柄（原来是匿名函数，没法移除）。
-       exitPlugin 里已先 flushDrafts + persist(true)，摘钩不会丢数据；
-       v4.4.5 起关窗改走主进程 destroy，摘钩主要为避免重复 persist、
-       不给任何卸载拦截留机会。用户点 Eagle 自己的 ✕ 退出时监听仍在，照常存。 */
-    const onUnloadPersist = () => { persist(true); };
+    /* v4.4.4：具名监听 + 摘钩句柄（匿名函数没法移除）。exitPlugin 里已先
+       flushDrafts + persist(true)，摘钩不会丢数据。
+       v4.4.6：卸载时顺手把 Eagle 快捷键恢复 —— 用户可能直接点 Eagle 的 ✕、
+       切走条目，甚至从插件界面直接退出 Eagle，这条兜底保证不留残留。 */
+    const onUnloadPersist = () => {
+      persist(true);
+      try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
+    };
     window.addEventListener('beforeunload', onUnloadPersist);
+    window.addEventListener('pagehide', () => {
+      try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
+    });
     detachUnloadPersist = () => {
       try { window.removeEventListener('beforeunload', onUnloadPersist); } catch (e) { /* ignore */ }
       detachUnloadPersist = null;
@@ -6509,16 +6525,13 @@
 
     try { flushDrafts(); } catch (e) { console.warn('[exit] 保存草稿失败', e); }
     try { persist(true); } catch (e) { console.warn('[exit] 保存失败', e); }
-    /* v4.4.4：数据已落盘，摘掉自己注册的 beforeunload。
-       v4.4.5 已不再靠 window.close() 关窗（改发 sender destroy），但摘钩仍
-       保留：避免销毁前后重复 persist，也免得宿主若走 close 流程时被卸载拦截。
+    /* v4.4.4：数据已落盘，摘掉自己注册的 beforeunload —— 页面不再挂着卸载
+       拦截，600ms 兜底的 window.close() 才不会被 Chromium 挡下。
        只摘我们自己这一条，不影响 Eagle 宿主自己的卸载逻辑。 */
     try { if (detachUnloadPersist) detachUnloadPersist(); } catch (e) { /* ignore */ }
     /* 退出前把还没发出去的注释同步立刻发一次（debounce 还压着的那一次）。
-       不 await —— 关窗不能被一次 IPC 拖住；写不进去下次打开会对账补上。 */
+       不 await —— 退出不能被一次 IPC 拖住；写不进去下次打开会对账补上。 */
     try { syncLater.cancel(); syncNotesToEagle(true); } catch (e) { /* ignore */ }
-
-    const alive = () => { try { return !window.closed; } catch (e) { return false; } };
 
     /* ⓪v4.4.1：关窗前先做身份裁决。
        预览形态下插件跑在 Eagle 主窗口的 <webview> 里，remote.getCurrentWindow()
@@ -6534,95 +6547,61 @@
       if (Bridge.windowIdentity) dbg('exit.env', Bridge.windowIdentity());
     } catch (e) { dbg('exit.guard.err', e); }
 
-    /* v4.4.5：预览窗口 ESC 的最终出口 —— **只发一条 destroy**。
-       v4.4.4 失败复盘（08:32 / 08:33 现场日志）：
-         · exit.senderclose {"sent":true} 证明 IPC close 确实发出去了；
-         · 但之后既没有 exit.senderdestroy，也没有 exit.stillalive，同一个
-           windowID=9 被连按十几次 —— 窗口根本没关；
-         · 根因是**两条关闭请求并发**：主进程 bw.close() 与 renderer 的
-           window.close() 同时发起、互相打断（结果在「宿主一起收走」与
-           「卡住没反应」之间摇摆）；而 window.close() 一发出，Chromium
-           就把 window.closed 提前置为 true，下面所有 if (!alive()) 兜底
-           全被短路 —— 现场那两行诊断一行都没有，正是这个原因。
-       现在只留一条路径：
-         Bridge.closeCurrent('destroy') → 主进程 BrowserWindow.fromWebContents
-         (event.sender).destroy()，无条件销毁当前预览窗口。destroy 不触发
-         'close' 事件、不跑 beforeunload、不受 sticky activation 影响，
-         所以既不会触发宿主「把界面一起收走」的回调，也不会卡在关闭拦截里。
-       closeCurrent 内部仍有 allow / allowSenderClose 双闸门；Eagle 主窗口、
-       browser、身份不明形态一律拒绝。全程不发 window.close()、不发 IPC
-       close、不调 closeSelf / destroySelf（依赖 remote，可能指回主窗口）。
-       兜底 timer 不再靠 window.closed 判断：timer 能执行本身就说明窗口还在
-       （真关掉了 renderer 上下文就没了，timer 根本不会跑）。 */
+    /* v4.4.6 终局：预览插件跑在 Eagle 主窗口的 <webview> 里。
+       08:44 现场 [env] {"bw":"max"} + log.log 连续
+       "TypeError: Object has been destroyed at MenuItem.click" 证明：
+       plugin.window. 的 BrowserWindow.fromWebContents(event.sender) 拿到的是
+       **Eagle 主窗口**；v4.4.4 的 bw.close()、v4.4.5 的 bw.destroy()
+       关掉/销毁的正是主窗口（用户说的「一起退出」「最小化后双击打不开」）。
+       从此预览分支一个 BrowserWindow 方法都不碰：只发 Eagle 官方的
+       "Exit" 消息给宿主，由 leaveDetailMode() 卸载 webview。 */
     if (!verdict.allow && verdict.allowWindowClose) {
       const now = Date.now();
-      /* 连按 ESC 只发一轮关窗请求；1.2s 后可重试（兜底提示出现后仍按得动） */
+      /* 连按 ESC 只发一轮请求；1.2s 后可重试 */
       if (now - exitSentAt < 1200) { exiting = false; return; }
       exitSentAt = now;
-      dbg('exit.selfclose', verdict);
+      /* 用户要求：插件退出即恢复 Eagle 快捷键 */
+      try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
       try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
       let sent = false;
-      try { sent = !!(Bridge.closeCurrent && Bridge.closeCurrent('destroy')); } catch (e) { /* ignore */ }
-      dbg('exit.destroy', { sent: sent, allowSenderClose: !!verdict.allowSenderClose });
-      [120, 420].forEach((ms) => setTimeout(() => {
-        try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
-      }, ms));
-      /* 320ms 后这个 timer 还能跑 = 窗口仍在，再补一次 destroy（防 IPC 丢包） */
+      try { sent = !!(Bridge.hostExit && Bridge.hostExit()); } catch (e) { /* ignore */ }
+      dbg('exit.hostclose', { sent: sent, code: verdict.code });
+      /* 单一兜底：hostExit 没送达时，才用 renderer 自己的 window.close()
+         关掉当前 browsing context（webview guest），不经过主进程、碰不到主窗口。
+         v4.4.3 实测这条路不会动 Eagle 主界面。绝不并发其它关窗请求；
+         timer 能执行本身就说明页面还在，不依赖浏览器关闭标志。 */
       setTimeout(() => {
-        let again = false;
-        try { again = !!(Bridge.closeCurrent && Bridge.closeCurrent('destroy')); } catch (e) { /* ignore */ }
-        dbg('exit.destroy.retry', { sent: again });
-      }, 320);
-      /* 900ms 仍在：把话说清楚，并留一句可执行的兜底提示 */
+        try { window.close(); } catch (e) { /* ignore */ }
+        dbg('exit.rendererclose', {});
+      }, 600);
       setTimeout(() => {
         dbg('exit.stillalive', { sent: sent });
-        U.toast('窗口未关闭，请按空格或点 Eagle 的返回退出预览', '', 3200);
-      }, 900);
+        U.toast('若仍停留在预览，请点 Eagle 顶部的返回箭头退出', '', 3600);
+      }, 1200);
       exiting = false;
       return;
     }
 
     if (!verdict.allow) {
-      /* 只做恢复，不做关闭：万一这一下 ESC 仍旧漏给了 Eagle、把主窗口收走，
-         这里把它 restore+show 回来（不抢焦点，插件还开着）。 */
+      /* browser / 身份不明形态：只恢复快捷键 + 通知宿主，一个窗口 API 都不碰 */
+      try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
       try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
-      U.toast('当前是 Eagle 预览视图，为保护主界面不执行关闭；请按空格或点 Eagle 的返回退出预览', '', 3600);
+      try { Bridge.hostExit && Bridge.hostExit(); } catch (e) { /* ignore */ }
+      U.toast('当前是 Eagle 预览视图，为保护主界面不执行关闭；请点 Eagle 的返回箭头退出', '', 3600);
       exiting = false;
       return;
     }
 
-    /* ⓪ v3.30：先把 Eagle 主窗口捞回来。
-       用户报「偶发按 ESC 退出插件后，落到一个最小化的 Eagle」——
-       不是被我们最小化了，而是 Eagle 本来就缩在托盘/任务栏，
-       插件窗口一关，焦点交回去的就是那个最小化窗口，看起来像「被切走了」。
-       所以关自己之前，把主窗口 restore → show → focus 一次。 */
+    /* 独立插件窗口（闪灵面板）：只关自己所在的 renderer。
+       绝不走 closeSelf / destroySelf / plugin.window.（可能指回主窗口）。 */
+    try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
     try { if (Bridge.focusParent) Bridge.focusParent(); } catch (e) { /* ignore */ }
-
-    /* ① 主进程关窗（首选）：正常关闭流程，Eagle 能收到 closed 事件。
-       Bridge.closeSelf() 内部还有同一道身份守卫，双保险。 */
-    let tried = false;
-    try { tried = !!(Bridge.closeSelf && Bridge.closeSelf()); } catch (e) { tried = false; }
-    /* ② 老办法一起发：window.close() 在个别 Eagle 版本里仍然有效。
-       只在守卫通过时才发 —— 预览 webview 形态下它可能触发宿主的收起逻辑。 */
     try { window.close(); } catch (e) { /* ignore */ }
-
-    /* ②b v4.4.1：关窗之后再补两次恢复。任何把 Eagle 主窗口收走的副作用
-       （Eagle 自己收到 ESC、预览窗口关闭触发的收起）都在这里被纠正回来。 */
     [120, 420].forEach((ms) => setTimeout(() => {
       try { if (Bridge.focusParent) Bridge.focusParent({ focus: false }); } catch (e) { /* ignore */ }
     }, ms));
-
-    /* ③ 400ms 后还活着 → 无条件销毁。到这一步 close 已经确定被拦住了
-       （beforeunload / 主进程策略），再等下去就是「按了没反应」。 */
     setTimeout(() => {
-      if (!alive()) return;
-      try { if (Bridge.destroySelf) Bridge.destroySelf(); } catch (e) { /* ignore */ }
-    }, 400);
-
-    /* ④ 1 秒后还在：把话说清楚，并给一个点得到的出口 */
-    setTimeout(() => {
-      if (!alive()) return;
-      exitFailBanner(tried ? '窗口没能关闭（Eagle 拒绝了关闭请求）' : '窗口没能关闭：当前环境拿不到关窗接口');
+      exitFailBanner('窗口没能关闭：请点窗口右上角的 ✕');
     }, 1000);
   }
 
@@ -6969,18 +6948,13 @@
   /* ==================== 对外钩子 ==================== */
   window.AppState = state;
 
-  /* v3.34：自绘标题栏的 ✕ 从这里出去。
-     ────────────────────────────────────────────────────────────
-     用户报「工作台按 ESC 收起来之后，插件还开着，右上角的 ✕ 点不动，只有 Ctrl+W 能关」。
-     原因很直接：framewin.js 里那个 ✕ 调的是 window.close()，而 Eagle 的插件窗口
-     对 close 有拦截（这正是 v3.28 查出来的那件事），window.close() 是一记空操作。
-     Ctrl+W 之所以有效，是因为它走 exitPlugin() —— 先 Bridge.closeSelf()，
-     400ms 后窗口还在就 destroySelf() 无条件销毁。
-     所以 ✕ 不该有自己的一套关窗逻辑，直接复用退出流程（还会顺带存草稿）。 */
+  /* v4.4.6：✕ 与 Ctrl+W 统一走 exit()（存草稿 + 通知宿主退出）。
+     Bridge.closeSelf / destroySelf 已退役，保留这两个包装只为不破坏旧引用，
+     它们现在恒返回 false，绝不再碰任何窗口对象。 */
   window.App = {
     exit: exitPlugin,
-    closeSelf: () => { try { return !!(Bridge.closeSelf && Bridge.closeSelf()); } catch (e) { return false; } },
-    destroySelf: () => { try { return !!(Bridge.destroySelf && Bridge.destroySelf()); } catch (e) { return false; } },
+    closeSelf: () => false,
+    destroySelf: () => false,
     isExiting: () => exiting
   };
   window.AppViewer = () => viewer;

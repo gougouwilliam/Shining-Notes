@@ -70,14 +70,12 @@ ok(/return \{ allow: false, code: 'guard-missing' \};/.test(BR), '守卫模块�
 ok(/closeVerdict,\s*\n\s*windowIdentity,/.test(BR), 'closeVerdict / windowIdentity 已导出');
 
 console.log('—— ④ 关窗链路全部过守卫 ——');
-ok(/function closeSelf\(\) \{[\s\S]{0,400}?const v = closeVerdict\(\);[\s\S]{0,300}?if \(!v\.allow\)/.test(BR),
-  'closeSelf 先过守卫');
-ok(/function destroySelf\(\) \{[\s\S]{0,400}?const v = closeVerdict\(\);[\s\S]{0,300}?if \(!v\.allow\)/.test(BR),
-  'destroySelf 先过守卫');
-ok(/if \(!v\.allow\) \{\s*\n\s*try \{ if \(typeof Dbg !== 'undefined'\) Dbg\.log\('exit\.guard\.deny', v\.code\);/.test(BR),
-  '拒绝时写 debug.log（现场可定位）');
-ok(/return false;\s*\n\s*\}\s*\n\s*const w = selfWindow\(\);/.test(BR),
-  '拒绝分支直接 return false，不碰任何窗口对象');
+ok(/closeSelf\.retired/.test(BR),
+  'v4.4.6：closeSelf 已退役，零窗口 API');
+ok(/destroySelf\.retired/.test(BR),
+  'v4.4.6：destroySelf 已退役，零窗口 API');
+ok(/IPC_WINDOW_DENY/.test(BR), 'v4.4.6：关闭类 IPC 硬拦截（现场可定位）');
+ok(/function closeSelf\(\) \{[\s\S]{0,200}?return false;/.test(BR), '退役函数直接 return false，不碰任何窗口对象');
 ok(/function focusParent\(opts\)/.test(BR), 'focusParent 支持 opts');
 ok(/\(\!opts \|\| opts\.focus !== false\) && win\.focus/.test(BR),
   'opts.focus === false 时只 restore/show，不抢焦点');
@@ -105,7 +103,7 @@ ok(/dbg\('exit\.guard', verdict\)/.test(APP), '裁决结果写入 debug.log');
 ok(/\[120, 420\]\.forEach\(\(ms\) => setTimeout/.test(APP), '关窗后 120/420ms 两次补恢复');
 ok(/setTimeout\(\(\) => \{\s*\n\s*try \{ if \(Bridge\.focusParent\) Bridge\.focusParent\(\{ focus: false \}\);/.test(APP),
   '补恢复只 restore/show，不抢焦点');
-ok(/② 老办法一起发[\s\S]{0,220}?只在守卫通过时才发/.test(APP), 'window.close() 只在守卫通过后执行');
+ok(/window\.close\(\)/.test(APP) && !/closeCurrent\('destroy'\)/.test(APP), 'v4.4.6：window.close 只作 renderer 兜底，无 IPC destroy');
 
 console.log('—— ⑥ ESC：政策不变，出口加闸门 ——');
 ok(EG.escapeAction({ depth: 1 }) === 'pop-layer', '有浮层仍只收浮层');
@@ -120,9 +118,8 @@ ok(/e\.preventDefault\(\);\s*\n\s*e\.stopPropagation\(\);/.test(
 ), 'ESC 依旧无条件吞掉，不漏给 Eagle 宿主');
 
 console.log('—— ⑦ framewin 兜底链路也不绕过守卫 ——');
-ok(/let v = null;[\s\S]{0,300}?global\.Bridge\.closeVerdict\(\)[\s\S]{0,300}?if \(v && \!v\.allow\) \{ log\(\{ act: 'close', blocked: v\.code \}\); return false; \}/
-  .test(FW), 'act(close)/window.close 之前先过守卫，拒绝即放弃');
-ok(/if \(act\('close'\)\)/.test(FW), '原有兜底链路保留（守卫通过时行为不变）');
+ok(/Bridge\.hostExit/.test(FW), 'v4.4.6：framewin 兜底只通知宿主退出');
+ok(!/if \(act\('close'\)\)/.test(FW) && !/global\.close\(\)/.test(FW), 'v4.4.6：framewin 不再有 remote/IPC/window.close 兜底');
 
 console.log('—— ⑧ 版本号与文档 ——');
 const M1 = JSON.parse(read('EaglePDFReader/manifest.json'));

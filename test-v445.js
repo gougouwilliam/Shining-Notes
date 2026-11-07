@@ -46,11 +46,11 @@ console.log('—— ① 现场裁决不变（v4.4.4 的三级许可完全保留�
 }
 
 console.log('—— ② 失败复盘写进注释，防止再走回头路 ——');
-ok(/v4\.4\.5 复盘/.test(WG_SRC) && /并发/.test(WG_SRC),
-  'winguard 记录「close 并发」事故根因');
-ok(/window\.closed/.test(WG_SRC) && /短路/.test(WG_SRC),
-  'winguard 记录 window.closed 把兜底短路');
-ok(/只有 destroy 是/.test(WG_SRC), 'winguard 明确结论：只有 destroy 是出口');
+ok(/BrowserWindow\.fromWebContents/.test(WG_SRC) && /Eagle 主窗口/.test(WG_SRC),
+  'v4.4.6：注释记录真正根因——sender 定位拿到的是主窗口');
+ok(/Object has been destroyed/.test(WG_SRC) && /bw\.destroy\(\)/.test(WG_SRC),
+  'v4.4.6：注释记录 destroy 主窗口的现场证据');
+ok(/永不再调用/.test(WG_SRC), 'v4.4.6：注释明确 destroy 永不再用');
 ok(/不把 ESC 交还宿主/.test(EG_SRC), 'escguard 记下 v3.31 放行 ESC 会把整个界面收走');
 
 console.log('—— ③ 预览分支：单一出口，零并发 ——');
@@ -61,19 +61,19 @@ console.log('—— ③ 预览分支：单一出口，零并发 ——');
   ok(i > 0 && k > i && end > k, '能定位到预览分支');
   const seg = APP.slice(k, end);
 
-  ok(!/window\.close\(\);/.test(seg), '★ 不再调用 window.close()（干扰源 + window.closed 欺骗源）');
+  ok(/Bridge\.hostExit\(\)/.test(seg), 'v4.4.6：主路径改为宿主 Exit 消息');
   ok(!/Bridge\.closeCurrent\('close'\)/.test(seg), '★ 不再发 IPC close');
   ok(!/if \(!alive\(\)\) return;/.test(seg), '★ 兜底不再被 window.closed 短路');
-  ok((seg.match(/Bridge\.closeCurrent\('destroy'\)/g) || []).length >= 2,
-    '主路径 + 320ms 补发共两次 sender destroy（防 IPC 丢包）');
-  ok(/}, 320\);/.test(seg) && /}, 900\);/.test(seg), '320ms 补发、900ms 提示的节奏保留');
+  ok((seg.match(/Bridge\.closeCurrent\('destroy'\)/g) || []).length === 0,
+    'v4.4.6：sender destroy 一条都不发（它销毁主窗口）');
+  ok(/}, 600\);/.test(seg) && /}, 1200\);/.test(seg), 'v4.4.6：600ms 单兜底 / 1200ms 提示');
   ok(/now - exitSentAt < 1200/.test(seg), '连按 ESC 1.2s 防抖');
-  ok(/\[120, 420\]\.forEach/.test(seg), '宿主 restore/show 兜底保留（不抢焦点）');
+  ok(/Bridge\.setHostShortcuts\(false\)/.test(seg), 'v4.4.6：退出前恢复宿主快捷键');
   ok(!/Bridge\.(closeSelf|destroySelf)\(/.test(seg) && !/\.destroy\(\)/.test(seg),
     '不碰 remote 的 closeSelf / destroySelf');
-  ok(/dbg\('exit\.destroy'/.test(seg) && /dbg\('exit\.destroy\.retry'/.test(seg) &&
-     /dbg\('exit\.stillalive'/.test(seg), 'destroy / retry / stillalive 三级诊断齐全');
-  ok(/窗口未关闭，请按空格或点 Eagle 的返回退出预览/.test(seg), '极端情况仍有可执行提示');
+  ok(/dbg\('exit\.hostclose'/.test(seg) && /dbg\('exit\.rendererclose'/.test(seg) &&
+     /dbg\('exit\.stillalive'/.test(seg), 'v4.4.6：host / renderer / stillalive 三级诊断齐全');
+  ok(/若仍停留在预览，请点 Eagle 顶部的返回箭头退出/.test(seg), '极端情况仍有可执行提示');
   ok(/destroy 不触发/.test(WG_SRC) && /beforeunload/.test(WG_SRC),
     'winguard 注释写明 destroy 绕过 close 事件与 beforeunload');
 }
@@ -83,9 +83,8 @@ console.log('—— ④ Bridge：IPC 真实结果落盘 ——');
   ok(/function ipcWindow\(method, tag\)/.test(BR), 'ipcWindow 支持可选日志 tag');
   ok(/tag \+ '\.ok'/.test(BR) && /tag \+ '\.err'/.test(BR),
     '★ 成功与失败都写 debug.log（v4.4.4 是静默吞掉）');
-  ok(/return ipcWindow\(method === 'destroy' \? 'destroy' : 'close', 'exit\.ipc'\);/.test(BR),
-    'closeCurrent 带 exit.ipc tag');
-  ok(/if \(!v\.allow && !v\.allowSenderClose\) \{/.test(BR), 'closeCurrent 双闸门不变');
+  ok(/closeCurrent\.retired/.test(BR), 'v4.4.6：closeCurrent 退役，不再带 exit.ipc');
+  ok(/IPC_WINDOW_DENY/.test(BR), 'v4.4.6：改为 IPC 方法硬拦截');
   ok(/fromWebContents\(event\.sender\)/.test(BR), '注释保留主进程 sender 定位依据');
 }
 
@@ -98,7 +97,7 @@ console.log('—— ⑤ ESC 策略与数据保护不变 ——');
   ok(/e\.preventDefault\(\);\s*\n\s*e\.stopPropagation\(\);/.test(
     APP.slice(APP.indexOf("if (e.key === 'Escape') {", 6000), APP.indexOf("if (e.key === 'Escape') {", 6000) + 3000)
   ), '★ ESC 仍无条件吞掉，绝不交还宿主（v3.31 事故）');
-  ok(/const onUnloadPersist = \(\) => \{ persist\(true\); \};/.test(APP) &&
+  ok(/const onUnloadPersist = \(\) => \{[\s\S]{0,180}?persist\(true\)/.test(APP) &&
      /window\.removeEventListener\('beforeunload', onUnloadPersist\)/.test(APP),
     'beforeunload 摘钩仍在，退出前先落盘');
   ok(!/if \(onProgress\) onProgress\(/.test(ASR), 'ASR 进度回调 typeof 防御未回退');

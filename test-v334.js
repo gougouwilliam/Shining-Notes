@@ -220,9 +220,9 @@ function loadFrameWin(opts) {
     fx.init();
     fx.els.winClose.click();
     await tick();
-    ok(fx.calls.bridgeClose === 1, '没 App → Bridge.closeSelf()');
+    ok(fx.calls.bridgeClose === 0, 'v4.4.6：没 App 也不再调 Bridge.closeSelf()');
     fx.fireTimers();
-    ok(fx.calls.bridgeDestroy === 1, '没关掉 → 400ms 后 destroySelf()');
+    ok(fx.calls.bridgeDestroy === 0, 'v4.4.6：400ms destroySelf 兜底已删除');
   }
 
   {
@@ -231,7 +231,7 @@ function loadFrameWin(opts) {
     fx.init();
     fx.els.winClose.click();
     await tick();
-    ok(fx.calls.remoteClose === 1, '没有 App/Bridge → remote 的 close()');
+    ok(fx.calls.remoteClose === 0, 'v4.4.6：没有 App/Bridge 也不碰 remote.close()');
   }
 
   {
@@ -239,7 +239,7 @@ function loadFrameWin(opts) {
     fx.init();
     fx.els.winClose.click();
     await tick();
-    ok(fx.calls.winClose === 1, '连 remote / IPC 都没有 → 才退回 window.close()');
+    ok(fx.calls.winClose === 0, 'v4.4.6：任何兜底都不再调用 window.close()');
   }
 
   /* ───────────── 5. 非启动器窗口什么都不做 ───────────── */
@@ -294,8 +294,8 @@ function loadFrameWin(opts) {
   console.log('\n[8] 退出流程 / ESC 不回退');
 
   ok(/function exitPlugin\(\) \{/.test(APP), 'exitPlugin 还在');
-  ok(/tried = !!\(Bridge\.closeSelf && Bridge\.closeSelf\(\)\)/.test(APP), 'exitPlugin 先走 remote close');
-  ok(/if \(Bridge\.destroySelf\) Bridge\.destroySelf\(\);[\s\S]{0,80}?\}, 400\)/.test(APP), 'exitPlugin 400ms 后 destroy 兜底');
+  ok(/Bridge\.hostExit\(\)/.test(APP), 'v4.4.6：exitPlugin 走宿主 Exit 通道');
+  ok(!/Bridge\.destroySelf\(\)/.test(APP), 'v4.4.6：exitPlugin 不再有 destroy 兜底');
   ok(/flushDrafts\(\)/.test(APP), '关窗前存草稿（✕ 复用这条路，笔记不会丢）');
 
   const EG = require('./EaglePDFReader/js/escguard.js');

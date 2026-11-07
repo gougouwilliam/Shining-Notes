@@ -213,7 +213,7 @@ console.log('\n[6] 另存为：框没出现就不再干等 120 秒');
   ok(has(BR, 'win.isMinimized && win.isMinimized()') && has(BR, 'win.restore()'), '最小化就 restore');
   ok(has(BR, '!win.isVisible()) win.show()'), '在托盘里就 show');
   const exitBody = APP.slice(APP.indexOf('async function exitPlugin('), APP.indexOf('function hotSaveTarget('));
-  ok(exitBody.indexOf('Bridge.focusParent()') < exitBody.indexOf('Bridge.closeSelf()'), '先叫回主窗口，再关自己');
+  ok(/Bridge\.focusParent\(\)/.test(exitBody) && !/Bridge\.closeSelf\(\)/.test(exitBody), 'v4.4.6：仍恢复主窗口，但不再关自己');
   ok(has(APP, 'Ctrl+W'), 'Ctrl+W 也能退');
 
   ok(!has(HTML, 'id="btnClosePlugin"'), '顶栏那个假 ✕ 删了');

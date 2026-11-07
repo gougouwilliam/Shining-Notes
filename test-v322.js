@@ -219,8 +219,8 @@ console.log('\n[10] 接线静态断言');
 
   ok(/escapeAction\(env\)/.test(app), 'app.js 接入 ESC 动作判定');
   /* v3.28：关窗改走主进程 IPC —— eagle.window 没有 close，window.close() 会被静默拒绝 */
-  ok(app.indexOf('Bridge.closeSelf') > -1 && app.indexOf('Bridge.destroySelf') > -1,
-    'app.js 用主进程 IPC 关窗（close 不行就 destroy）');
+  ok(app.indexOf('Bridge.hostExit') > -1 && !/closeCurrent\('destroy'\)/.test(app),
+    'v4.4.6：关窗 IPC 已封死，退出改走宿主 Exit 通道');
   ok(/launcher:\s*!!\(Bridge\.state\.query/.test(app),
     '仍把 launcher 形态传给判定（但 v3.31 起不再据此退窗）');
   ok(app.indexOf('window.close()') > -1, 'app.js 用 window.close() 关独立预览/启动器窗口');
@@ -239,10 +239,10 @@ console.log('\n[10] 接线静态断言');
      v4.4.0 起唯一允许的出口是「兜底关浮层失败之后」那一次（空栈才退） */
   ok(!/if \(act === 'pop-layer'\)\s*\{\s*Esc\.handle\(\); return; \}[\s\S]{0,160}?exitPlugin\(\)/.test(app),
     'pop-layer / clear-search / blur 各分支不直接退出，浮层永远快于关窗');
-  ok(/setTimeout\(\(\) => \{\s*\n\s*if \(!alive\(\)\) return;\s*\n\s*try \{ if \(Bridge\.destroySelf\)/.test(app),
-    '400ms 后还活着就 destroy（close 被拦住时的兜底）');
-  ok(app.indexOf('window.close()') > -1 && app.indexOf('Bridge.closeSelf') > -1,
-    'IPC 关窗与标准 window.close 同时尝试');
+  ok(app.indexOf('Bridge.destroySelf') === -1,
+    'v4.4.6：400ms destroy 兜底已删除（它销毁的是 Eagle 主窗口）');
+  ok(app.indexOf('window.close()') > -1 && !/Bridge\.closeSelf\(\)/.test(app),
+    'v4.4.6：window.close 只作 renderer 兜底，绝不与 IPC 关窗并发');
   ok(app.indexOf('document.visibilityState') === -1,
     '不再用 visibilityState 判断「已关掉」（隐藏 ≠ 关闭，会把失败的关闭当成成功）');
   ok(/if \(act === 'blur'\)/.test(app) && /preventDefault\(\);\s*\n\s*e\.stopPropagation\(\);/.test(app),

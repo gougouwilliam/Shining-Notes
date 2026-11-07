@@ -107,20 +107,20 @@ console.log('—— ③ 穷举：allowSenderClose 的必要条件 ——');
 console.log('—— ④ Bridge：按 sender 定向关窗通道 ——');
 {
   ok(/function closeCurrent\(method\) \{/.test(BR), '新增 closeCurrent(method)');
-  ok(/if \(!v\.allow && !v\.allowSenderClose\) \{/.test(BR), '双闸门：allow 或 allowSenderClose 至少其一');
-  ok(/return ipcWindow\(method === 'destroy' \? 'destroy' : 'close', 'exit\.ipc'\);/.test(BR),
-    '只转发 close / destroy 两个方法，交给主进程 sender 定位（带结果日志 tag）');
+  ok(/IPC_WINDOW_DENY/.test(BR), 'v4.4.6：关闭类 IPC 硬拦截取代双闸门');
+  ok(/closeCurrent\.retired/.test(BR),
+    'v4.4.6：closeCurrent 退役，不再转发 close/destroy');
   ok(/fromWebContents\(event\.sender\)/.test(BR), '注释写明主进程按 sender 定位，不跨窗口');
   ok(/tag \+ '\.err'/.test(BR) && /tag \+ '\.ok'/.test(BR),
     'v4.4.5：IPC 的 ok / err 都写进 debug.log，不再静默吞掉失败');
   ok(/^\s+closeCurrent,$/m.test(BR), 'closeCurrent 已导出给 app.js');
-  ok(/exit\.senderclose\.deny/.test(BR), '被拒时写 debug.log，下轮好定位');
+  ok(/exit\.host/.test(BR), 'v4.4.6：hostExit 结果写 debug.log，下轮好定位');
 }
 
 console.log('—— ⑤ app.js：退出前摘 beforeunload ——');
 {
   ok(/let detachUnloadPersist = null;/.test(APP), '模块级摘钩句柄');
-  ok(/const onUnloadPersist = \(\) => \{ persist\(true\); \};/.test(APP), 'beforeunload 改具名监听');
+  ok(/const onUnloadPersist = \(\) => \{[\s\S]{0,180}?persist\(true\)[\s\S]{0,180}?setHostShortcuts\(false\)/.test(APP), 'v4.4.6：卸载时落盘并恢复宿主快捷键');
   ok(/window\.addEventListener\('beforeunload', onUnloadPersist\)/.test(APP), '具名监听已注册');
   ok(/window\.removeEventListener\('beforeunload', onUnloadPersist\)/.test(APP), '摘钩时真正 remove 掉');
   ok(!/window\.addEventListener\('beforeunload', \(\) => \{ persist\(true\); \}\)/.test(APP),
@@ -140,17 +140,16 @@ console.log('—— ⑥ app.js：预览分支的关窗序列 ——');
   ok(i > 0 && k > i && end > k, '能定位到预览分支');
   const seg = APP.slice(k, end);
   ok(/now - exitSentAt < 1200/.test(seg), '连按 ESC 1.2s 防抖，不重复发 IPC');
-  ok(/Bridge\.closeCurrent\('destroy'\)/.test(seg) && !/Bridge\.closeCurrent\('close'\)/.test(seg),
-    'v4.4.5 单一出口：只发 sender destroy');
-  ok(!/window\.close\(\);/.test(seg), 'v4.4.5 起不再调用 window.close()（会把 window.closed 提前置真）');
-  ok(/Bridge\.closeCurrent\('destroy'\)/.test(seg), '320ms 仍活 → destroy 硬销毁');
-  ok(/}, 320\);/.test(seg) && /}, 900\);/.test(seg), '硬兜底 320ms、提示 900ms');
-  ok(/\[120, 420\]\.forEach/.test(seg), '保留两次宿主 restore/show（不抢焦点）');
+  ok(/Bridge\.hostExit\(\)/.test(seg), 'v4.4.6：单一出口是宿主 Exit 消息');
+  ok(!/Bridge\.closeCurrent\('destroy'\)/.test(seg), 'v4.4.6：sender destroy 已删除');
+  ok(/window\.close\(\)/.test(seg), '600ms 兜底只关当前 renderer，不碰主窗口');
+  ok(/}, 600\);/.test(seg) && /}, 1200\);/.test(seg), '600ms 单兜底 / 1200ms 提示');
+  ok(/Bridge\.setHostShortcuts\(false\)/.test(seg), '退出时恢复 Eagle 快捷键');
   ok(!/Bridge\.(closeSelf|destroySelf)\(/.test(seg) && !/\.destroy\(\)/.test(seg),
     '不直接调 remote 关窗 API（那条路可能指回主窗口）');
-  ok(/dbg\('exit\.destroy'/.test(seg) && /dbg\('exit\.destroy\.retry'/.test(seg) &&
-     /dbg\('exit\.stillalive'/.test(seg), '三级诊断日志齐全');
-  ok(/窗口未关闭，请按空格或点 Eagle 的返回退出预览/.test(seg), '极端情况仍给可执行提示');
+  ok(/dbg\('exit\.hostclose'/.test(seg) && /dbg\('exit\.rendererclose'/.test(seg) &&
+     /dbg\('exit\.stillalive'/.test(seg), 'v4.4.6 三级诊断日志齐全');
+  ok(/若仍停留在预览，请点 Eagle 顶部的返回箭头退出/.test(seg), '极端情况仍给可执行提示');
 }
 
 console.log('—— ⑦ 根因写进注释，防止下次再判错 ——');

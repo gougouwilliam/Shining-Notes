@@ -1,70 +1,34 @@
-/* winguard.js —— 关窗前的窗口身份判定（v4.4.3 修订，纯函数）
+/* winguard.js —— 窗口形态裁决（纯函数）
  *
- * v4.4.1 的初衷：ESC 恢复关窗后，用户实测「按 ESC 会把 Eagle 一起最小化」，
- * 所以加一道守卫：只有能证明「自己不是 Eagle 主窗口」才允许关窗。
+ * ⚠️ v4.4.6 事实更正：v4.4.3 的判断是错的，别再照抄
+ * ────────────────────────────────────────────────────────────
+ * 本插件的预览页跑在 Eagle 主窗口的 <webview> 里。app.asar @1542729
+ * 注入的是：
+ *   window.parentID = 主窗口 webContents.id
+ *   window.windowID = webview.getWebContentsId()
+ * 所以 `windowID !== parentID` 只说明「我不是主窗口 webContents」，
+ * **不等于**「我是独立 BrowserWindow」。pluginModule.openPreview 里那条
+ * new BrowserWindow 路径属于别的预览器，不是本插件。
  *
- * v4.4.3 的事实更正（翻 Eagle 4.0 app.asar 的 pluginModule.openPreview）
- * ────────────────────────────────────────────────────────────────
- *   openPreview: (plugin, item) => {
- *     let win = new BrowserWindow({ show: true, frame: true, ... });
- *     win.webContents.on('dom-ready', () => {
- *       window.parentID = 主窗口 webContents.id;
- *       window.windowID = win.webContents.id;
- *     });
- *   }
- * 预览视图其实是**独立的 BrowserWindow**，不是主窗口里的 <webview>。
- * 所以 `windowID !== parentID` 恰恰证明「我不是主窗口」。
+ * 致命后果：主进程 plugin.window. handler 用
+ *   BrowserWindow.fromWebContents(event.sender)
+ * 定位，在 webview 形态下拿到的是 **Eagle 主窗口**。现场
+ * [env] {"bw":"max"} 正是主窗口最大化（window-state.json isMaximized:true），
+ * 不是「预览窗口最大化」。v4.4.4 发 bw.close()、v4.4.5 发 bw.destroy()，
+ * 关掉/销毁的都是主窗口：用户「一起退出」「最小化后双击打不开」，
+ * log.log 连续 "TypeError: Object has been destroyed at MenuItem.click"。
  *
- * v4.4.1 把「有 parentID」一律当成「跑在主窗口里」，又要求必须拿到
- * remote.getCurrentWindow().webContents.id 才放行；而预览窗口里
- * @electron/remote 经常不可用（现场日志 43 次裁决全是 no-self-id），
- * 结果连自己的预览窗口都不敢关 —— 用户一操作抢到焦点，ESC 就只弹提示。
+ * 于是本模块的三档裁决**只用于描述形态，不再用于放行任何 close/destroy**：
+ * 所有窗口关闭类方法已在 bridge.js 的 IPC_WINDOW_DENY 硬拦截；退出统一
+ * 走 hostExit() —— parent.postMessage('Exit','*') 触发 Eagle 自己的
+ * leaveDetailMode()。destroy 不触发 'close' 事件、不跑 beforeunload、
+ * 不受 sticky activation 影响，这些只是历史备注，本插件永不再调用。
  *
- * 两级许可（这是本版的核心）
- * ────────────────────────────
- *   allow            → 能否对 remote.getCurrentWindow() / IPC 拿到的窗口对象
- *                      执行 close()/destroy()。这些 API 有可能指回主窗口，
- *                      证据必须最严（selfId + 窗口列表双重佐证）。
- *   allowWindowClose → 能否调用 window.close()。它只作用于**当前 renderer
- *                      所在的窗口**，天然不会跨窗口误伤；只有当当前 JS
- *                      确实跑在主窗口 webContents 里（windowID===parentID，
- *                      或调用方标记 selfIsHost）时才禁止。
- *
- * 于是预览窗口的正确做法：allow=false（封死 remote/IPC），
- * allowWindowClose=true（用 window.close() 关自己）。既不误关 Eagle，
- * 也不会「按了 ESC 只弹一句提示」。
- *
- * v4.4.4 的现场更正：window.close() 单独一条路并不可靠
- * ────────────────────────────────────────────────────
- * 用户实测「打开文档不操作 / 只滚轮 → ESC 能退出；鼠标点一下之后 → ESC 失效」。
- * app.js 在 window 上注册了 beforeunload（退出时 persist）。Chromium 的规定是：
- * 页面存在 beforeunload 监听器、且用户已产生 sticky activation（鼠标点击、
- * 键盘输入）时，脚本发起的 window.close() 会被拦下等待确认 / 静默拒绝；
- * 滚轮滚动不产生 activation，所以未点击时关得掉，一点击就关不掉。
- * 现场 debug.log 里 00:25 之后成片的 exit.selfclose 正是「按了、没关掉」。
- *
- * 出路是主进程按 sender 定向关窗：ipcRenderer.invoke('plugin.window.',
- * { method:'close'|'destroy' }) 在 Eagle 主进程里走
- * BrowserWindow.fromWebContents(event.sender)，作用对象只能是发出消息的
- * 那个窗口；destroy() 更是直接绕过 renderer 的 beforeunload。
- * 现场 [env] {"ipc":true,"bw":"max"} 已证明这条通道在预览窗口里可用且
- * 指向正确（isMaximized 返回 true 的正是被最大化的预览窗口）。
- * 因为 destroy 比 close 强硬，新增第三级许可 allowSenderClose，
- * 证据要求比 allowWindowClose 更严（见 closeVerdict 里的注释）。
- *
- * v4.4.5 复盘：close 也不是答案，只有 destroy 是
- * ────────────────────────────────────────────
- * 现场 08:32 / 08:33 日志：IPC close 已发出（sent:true），窗口却没关，
- * 同一个 windowID 被连按十几次；而 exit.senderdestroy / exit.stillalive
- * 一行都没有。两件事同时发生：
- *   ① 主进程 bw.close() 与 renderer 的 window.close() **并发**，互相打断 ——
- *      结果在「宿主一起收走」和「卡住没反应」之间摇摆；
- *   ② window.close() 一发出，Chromium 就把 window.closed 提前置为 true，
- *      exitPlugin 里所有 if (!alive()) 兜底全被短路，硬兜底根本没机会发。
- * 结论：预览窗口只发一条 closeCurrent('destroy')。destroy 不触发 'close'
- * 事件、不跑 beforeunload、不受 sticky activation 影响，且 sender 定位保证
- * 只作用于自己。allowWindowClose 仍作为「当前窗口可关闭」的形态证据保留，
- * 但不再真的调用 window.close()。
+ * 三档许可的取值契约保持兼容旧回归套件：
+ *   allow            → 严格证明自己是独立窗口（selfId + 窗口列表双重佐证）
+ *   allowWindowClose → 当前 renderer 可用 window.close()（只关自己）
+ *   allowSenderClose → 形态证据（windowID≠parentID 或独立 window）
+ * 只在 windowID===parentID / selfIsHost / browser / unknown-mode 时三级全拒。
  *
  * 浏览器里挂 window.WinGuard，Node 里 module.exports（测试直接 require）。
  */

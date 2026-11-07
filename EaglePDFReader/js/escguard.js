@@ -1,11 +1,22 @@
-/* escguard.js —— ESC 动作决策（v3.22，纯函数）
- *
- * 把「这一下 ESC 该干什么」从 onKeyDown 里抽出来，便于对不同窗口形态做行为级测试。
+/* escguard.js —— ESC 动作决策（纯函数，v3.22 起）
+ * 把「这一下 ESC 该干什么」抽出来，便于对不同窗口形态做行为级测试。
  * 浏览器里挂 window.EscGuard，Node 里 module.exports。
  *
- * 背景：预览扩展不是跑在 Eagle 主窗口的 document 里，而是 Eagle 用 openPreview
- * 创建的独立 BrowserWindow（app.asar 里 dom-ready 会注入 window.windowID / window.parentID）。
- * 因此预览窗口里按 ESC，事件冒泡不到主窗口的 escHandler/quicklook。
+ * 逐级退出优先级（v4.4.0 起，四档一直没变）：
+ *   1) 有浮层 → 弹栈顶；2) 搜索框有字 → 只清搜索；
+ *   3) 正在输入 → 失焦；4) 其余 → exit-plugin。
+ * app.js 对 ESC 无条件 preventDefault + stopPropagation，
+ * 不把 ESC 交还宿主（v3.31 试过放行，Eagle 会把整个界面收走）。
+ *
+ * ⚠️ v4.4.6 事实更正：预览页是 Eagle 主窗口里的 <webview>（详见
+ * winguard.js 头注释），不是独立 BrowserWindow。v4.4.3 依据
+ * pluginModule.openPreview 的推断是错的，v4.4.4 的 sticky activation /
+ * beforeunload 归因最多是次要因素，v4.4.5 的「只发一条 destroy」
+ * 更是直接销毁了 Eagle 主窗口。三版的关窗结论均已作废。
+ *
+ * 现在 exit-plugin 的语义是：落盘 → 恢复 Eagle 快捷键 → 给宿主发
+ * "Exit" 消息让 leaveDetailMode() 收起预览，一个窗口 API 都不碰。
+ * 这里的分级判定从未判错，别再改本文件的决策。
  */
 (function (global) {
   'use strict';

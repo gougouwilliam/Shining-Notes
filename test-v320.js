@@ -142,7 +142,7 @@ console.log('\n[2] framewin 行为（桩 DOM）');
     ok(w._calls.filter((c) => c === 'maximize').length >= 2, '双击标题栏也能最大化');
 
     els.winClose.fire('click');
-    ok(w._calls.includes('close'), '关闭按钮最终退到 window.close()');
+    ok(!w._calls.includes('close'), 'v4.4.6：✕ 不再调用窗口 close/destroy，统一走 App.exit / hostExit');
 
     /* 4) v3.34.1：没有 eagle.window 也要启用。
        以前这里断言「无 eagle.window 就 return false」，正是那条规则让用户那台机器上

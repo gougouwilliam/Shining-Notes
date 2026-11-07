@@ -113,8 +113,8 @@ console.log('—— ⑤ 穷举：allowWindowClose 只有 4 类拒绝码会关掉
 
 console.log('—— ⑥ 事实依据写进注释，防止下次再判错 ——');
 ok(/pluginModule\.openPreview/.test(WG_SRC), '注释记录 openPreview 源码位置');
-ok(/new BrowserWindow/.test(WG_SRC), '注释明确预览是独立 BrowserWindow');
-ok(/allowWindowClose/.test(WG_SRC) && /两级许可/.test(WG_SRC), '注释说明两级许可的设计');
+ok(/<webview>/.test(WG_SRC) && /不等于/.test(WG_SRC), 'v4.4.6：注释更正为 webview 形态，撤回独立窗口误判');
+ok(/IPC_WINDOW_DENY/.test(WG_SRC) && /hostExit/.test(WG_SRC), 'v4.4.6：注释写明关闭类 IPC 硬拦截与宿主退出通道');
 ok(HTML.indexOf('js/winguard.js') > 0 && HTML.indexOf('js/winguard.js') < HTML.indexOf('js/bridge.js'),
   'winguard.js 仍在 bridge.js 之前加载');
 
@@ -127,15 +127,15 @@ console.log('—— ⑦ exitPlugin：预览分支走 sender 定向关窗，不�
   const end = APP.indexOf('exiting = false;\n      return;', k);
   ok(i > 0 && j > i && k > j && end > k && denyAt > end, '能定位到新分支与旧拒绝分支（新分支在前）');
   const seg = APP.slice(k, end);
-  ok(!/window\.close\(\);/.test(seg), 'v4.4.5 起预览分支不再调用 window.close()（并发干扰源）');
+  ok(/Bridge\.hostExit\(\)/.test(seg), 'v4.4.6：预览分支主路径是宿主 Exit 消息');
   ok(!/Bridge\.(closeSelf|destroySelf)\(/.test(seg) && !/\.destroy\(\)/.test(seg),
     '不直接调 remote 的 closeSelf / destroySelf（v4.4.4 改走 sender 定向通道）');
-  ok(/Bridge\.closeCurrent\('destroy'\)/.test(seg) && !/Bridge\.closeCurrent\('close'\)/.test(seg),
-    'v4.4.5 单一出口：只发 sender destroy，不再并发 IPC close');
+  ok(!/Bridge\.closeCurrent\('destroy'\)/.test(seg) && !/Bridge\.closeCurrent\('close'\)/.test(seg),
+    'v4.4.6：主进程 close/destroy 全部退役（会打到主窗口）');
   ok(/Bridge\.focusParent\(\{ focus: false \}\)/.test(seg), '只 restore/show 宿主，不抢焦点');
-  ok(/\[120, 420\]\.forEach/.test(seg), '120/420ms 两次补恢复');
-  ok(/窗口未关闭，请按空格或点 Eagle 的返回退出预览/.test(seg), '脚本关窗被拒时有可执行兜底提示');
-  ok(/}, 900\);/.test(seg), '兜底提示延迟到 900ms（关窗成功就不会弹）');
+  ok(/Bridge\.setHostShortcuts\(false\)/.test(seg), 'v4.4.6：退出前恢复 Eagle 快捷键');
+  ok(/若仍停留在预览，请点 Eagle 顶部的返回箭头退出/.test(seg), '兜底提示仍可执行');
+  ok(/}, 600\);/.test(seg) && /}, 1200\);/.test(seg), '600ms 单兜底 / 1200ms 提示，无并发关窗请求');
   ok(/exiting = false/.test(seg + 'exiting = false;'), '复位 exiting，不会卡住后续退出');
 
   const denySeg = APP.slice(denyAt, APP.indexOf('exiting = false;\n      return;', denyAt));
@@ -145,7 +145,7 @@ console.log('—— ⑦ exitPlugin：预览分支走 sender 定向关窗，不�
   ok(/U\.toast\('当前是 Eagle 预览视图/.test(denySeg), '完全拒绝时仍给明确提示');
   ok(/dbg\('exit\.guard', verdict\)/.test(APP), '裁决结果写入 debug.log');
   ok(/dbg\('exit\.env', Bridge\.windowIdentity\(\)\)/.test(APP), '补记 windowIdentity 全字段');
-  ok(/dbg\('exit\.selfclose', verdict\)/.test(APP), '补记 selfclose 决策');
+  ok(/dbg\('exit\.hostclose'/.test(APP), 'v4.4.6：宿主退出结果写入 debug.log');
 }
 
 console.log('—— ⑧ ESC 策略不变 ——');

@@ -754,25 +754,13 @@ const Bridge = (function () {
     try { window.open(url, '_blank'); } catch (e) { /* ignore */ }
   }
 
-  /* 关闭插件窗口（回到 Eagle 资料库）
-     只在「独立窗口」形态下动窗口：预览模式的 webContents 属于 Eagle 主窗口，
-     调 hide()/minimize() 会把 Eagle 整个收进托盘，这是个很容易踩的坑。 */
+  /* 关闭插件窗口（v4.4.6 退役）
+     原来这里探测 eagle.window.close / hide，但那条官方 API 最终也走
+     plugin.window. → BrowserWindow.fromWebContents(sender)，而预览插件
+     跑在主窗口 webview 里，sender 归属就是 Eagle 主窗口。函数保留仅为
+     兼容历史调用点，永不执行任何窗口动作。退出统一走 hostExit()。 */
   function closeWindow() {
-    if (state.mode !== 'window') return false;
-    /* v4.4.1：这条老通道也要过身份守卫 —— 它调用的 eagle.window.hide()
-       在形态判定失准时会把 Eagle 主窗口收进托盘。 */
-    try { if (!closeVerdict().allow) return false; } catch (e) { return false; }
-    try {
-      const e = api();
-      const w = e && e.window;
-      if (w) {
-        /* Eagle 官方 API 里其实没有 window.close，只有 hide / minimize；
-           这里仍按 close → hide 的顺序探测，兼容不同版本 */
-        if (typeof w.close === 'function') { w.close(); return true; }
-        if (typeof w.hide === 'function') { w.hide(); return true; }
-      }
-    } catch (e) { /* ignore */ }
-    try { window.close(); return true; } catch (e) { /* ignore */ }
+    try { if (typeof Dbg !== 'undefined') Dbg.log('closeWindow.retired', {}); } catch (e) { /* ignore */ }
     return false;
   }
 
@@ -790,7 +778,25 @@ const Bridge = (function () {
 
      v3.27 之前一直以为是按键没送到、或者 ESC 栈还有残留层 —— 都不是。
      真正的出口在这里。 */
+  /* v4.4.6 红线（血的教训，永不再犯）
+     ────────────────────────────────────────────────────────────
+     本插件的预览页跑在 Eagle 主窗口的 <webview> 里：app.asar @1542729
+     注入的是 `window.windowID = webview.getWebContentsId()`，
+     `window.parentID` 才是主窗口的 webContents.id。所以主进程
+       BrowserWindow.fromWebContents(event.sender)
+     返回的是 **Eagle 主窗口**，不是什么「独立预览窗口」。
+     现场 [env] {"bw":"max"}（主窗口最大化）与 log.log 里连续的
+     "TypeError: Object has been destroyed at MenuItem.click" 都是佐证：
+     v4.4.4 发 bw.close()、v4.4.5 发 bw.destroy()，关掉/销毁的正是主窗口。
+     这里做**硬拦截**：不管调用方是谁，凡改变窗口生命周期/可见性的方法
+     一概不发 IPC；只读探测（isMaximized / isDestroyed 等）仍然放行。 */
+  const IPC_WINDOW_DENY = /^(close|destroy|hide|minimize|maximize|unmaximize|show|showInactive|focus|restore|setFullScreen|setAlwaysOnTop)$/;
+
   function ipcWindow(method, tag) {
+    if (IPC_WINDOW_DENY.test(String(method || ''))) {
+      try { if (typeof Dbg !== 'undefined') Dbg.log('ipcWindow.deny', { method: String(method), reason: 'host-window' }); } catch (e) { /* ignore */ }
+      return false;
+    }
     try {
       if (typeof require !== 'function') return false;
       const el = require('electron') || {};
@@ -927,61 +933,73 @@ const Bridge = (function () {
   /* 关窗：先过身份守卫，再优先 remote（同步、可靠），没有就退回 IPC 转发。
      v4.4.1：守卫拒绝时**一个窗口 API 都不碰** —— 预览 webview 形态下
      remote/IPC 都可能指向 Eagle 主窗口，close 它会被收进托盘。 */
+  /* v4.4.6 退役：remote.getCurrentWindow() / IPC 的 bw.close()、
+     bw.destroy() 在 webview 形态下都指向 Eagle 主窗口。保留函数名只为
+     兼容旧调用点；退出统一走 hostExit()，一个窗口 API 都不碰。 */
   function closeSelf() {
-    const v = closeVerdict();
-    if (!v.allow) {
-      try { if (typeof Dbg !== 'undefined') Dbg.log('exit.guard.deny', v.code); } catch (e) { /* ignore */ }
-      return false;
-    }
-    const w = selfWindow();
-    if (w) {
-      try {
-        w.close();
-        return true;
-      } catch (e) { /* 落到 IPC */ }
-    }
-    return ipcWindow('close');
+    try { if (typeof Dbg !== 'undefined') Dbg.log('closeSelf.retired', {}); } catch (e) { /* ignore */ }
+    return false;
   }
 
   function destroySelf() {
-    const v = closeVerdict();
-    if (!v.allow) return false;
-    const w = selfWindow();
-    if (w) {
-      try {
-        if (w.isDestroyed && w.isDestroyed()) return true;
-        w.destroy();
-        return true;
-      } catch (e) { /* 落到 IPC */ }
-    }
-    return ipcWindow('destroy');
+    try { if (typeof Dbg !== 'undefined') Dbg.log('destroySelf.retired', {}); } catch (e) { /* ignore */ }
+    return false;
   }
 
-  /* v4.4.4：按 sender 定向关窗 —— 预览窗口里 ESC 的最终出口
+  /* v4.4.6 更正（v4.4.4 的注释是错的，留着会再害人）
      ────────────────────────────────────────────────────
-     closeSelf() / destroySelf() 先走 remote.getCurrentWindow()，而预览窗口里
-     @electron/remote 拿不到窗口对象（现场 exit.env 的 selfId 恒为 null），
-     守卫因此把这条通道整个封死了。
-     ipcRenderer.invoke('plugin.window.', …) 不依赖 remote：Eagle 主进程用
-     BrowserWindow.fromWebContents(event.sender) 定位，作用对象只能是发出
-     这条消息的 renderer 所在的窗口。现场 [env] {"ipc":true,"bw":"max"}
-     已证明通道可用且指向正确（isMaximized 返回 true 的是预览窗口本身）。
-
-     与 window.close() 的关键差别：这是**主进程**发起的关闭，destroy 更是
-     无条件销毁，不受 renderer 的 beforeunload / sticky activation 限制 ——
-     页面被点击过后，Chromium 会拦下脚本发起的 window.close()（见 winguard
-     头注释），这正是「不操作能退出、点一下就失效」的根因。
-
-     安全边界：必须拿到 closeVerdict 的 allow 或 allowSenderClose。后者只在
-     windowID≠parentID（独立预览窗口）或独立 window 形态时为真；主窗口、
-     browser、身份不明形态一律拒绝，绝不重演「ESC 把 Eagle 收进托盘」。 */
+     当时以为「sender 定位只作用于发消息的预览窗口」，其实预览插件是
+     Eagle 主窗口里的 <webview>：BrowserWindow.fromWebContents(event.sender)
+     返回的是**主窗口**。[env] {"bw":"max"} 恰恰是主窗口最大化的证据，
+     不是「预览窗口最大化」。v4.4.4/4.4.5 据此发出的 close/destroy
+     把主窗口关掉/销毁了（托盘双击报 Object has been destroyed）。
+     本函数连同 closeSelf / destroySelf / closeWindow 一律退役。 */
   function closeCurrent(method) {
-    const v = closeVerdict();
-    if (!v.allow && !v.allowSenderClose) {
-      try { if (typeof Dbg !== 'undefined') Dbg.log('exit.senderclose.deny', v.code); } catch (e) { /* ignore */ }
-      return false;
+    /* v4.4.6 退役：见 IPC_WINDOW_DENY。保留函数只为兼容历史调用点，
+       它现在一个窗口 API 都不碰，恒返回 false。 */
+    try { if (typeof Dbg !== 'undefined') Dbg.log('closeCurrent.retired', { method: String(method || '') }); } catch (e) { /* ignore */ }
+    return false;
+  }
+
+  /* v4.4.6：把「退出预览」交还 Eagle 自己，零窗口 API。
+     Eagle 主窗口监听 window 的 message 事件：e.data === "Exit" →
+     $scope.leaveDetailMode()（app.asar @1644768）。官方 viewer.html 与 3D
+     viewer 用的就是 parent.postMessage("Exit","*")。这条路只在宿主内部
+     把详情模式收起来、卸载 webview，主窗口不会有任何生命周期变化。 */
+  function hostExit() {
+    const targets = [];
+    try { if (window.parent && window.parent !== window) targets.push(window.parent); } catch (e) { /* ignore */ }
+    try { if (window.top && window.top !== window && window.top !== window.parent) targets.push(window.top); } catch (e) { /* ignore */ }
+    try { if (window.opener && !window.opener.closed && targets.indexOf(window.opener) < 0) targets.push(window.opener); } catch (e) { /* ignore */ }
+    let sent = 0;
+    for (let i = 0; i < targets.length; i++) {
+      try { targets[i].postMessage('Exit', '*'); sent++; } catch (e) { /* ignore */ }
     }
-    return ipcWindow(method === 'destroy' ? 'destroy' : 'close', 'exit.ipc');
+    try { if (typeof Dbg !== 'undefined') Dbg.log('exit.host', { sent: sent, targets: targets.length }); } catch (e) { /* ignore */ }
+    return sent > 0;
+  }
+
+  /* v4.4.6：宿主快捷键开关（用户要求「开插件即关 Eagle 快捷键，退出即恢复」）。
+     Eagle 自己对独立插件窗口用的就是 webContents.setIgnoreMenuShortcuts(true)
+     （app.asar /app/js/utils/ignoreMenuShortcuts.js）。这里走官方
+     'plugin.window.webContents.' 转发通道，只改快捷键开关，绝不碰窗口生命周期。
+     这是 webContents 的**运行时状态、不持久化**，Eagle 重启自动复位；插件
+     每次启动还会无条件先发一次 false 做自愈，覆盖「在插件里直接退出 Eagle」
+     导致来不及恢复的情况。 */
+  function setHostShortcuts(ignored) {
+    const val = !!ignored;
+    try {
+      if (typeof require !== 'function') return false;
+      const el = require('electron') || {};
+      const ipc = el.ipcRenderer;
+      if (!ipc || typeof ipc.invoke !== 'function') return false;
+      const pending = ipc.invoke('plugin.window.webContents.', {
+        method: 'setIgnoreMenuShortcuts', value: val
+      });
+      if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+      try { if (typeof Dbg !== 'undefined') Dbg.log('shortcuts.set', { ignored: val }); } catch (e) { /* ignore */ }
+      return true;
+    } catch (e) { return false; }
   }
 
   /* 把 dataURL 图片写入系统剪贴板（Electron 的 clipboard 比 navigator.clipboard 可靠） */
@@ -1134,6 +1152,8 @@ const Bridge = (function () {
     closeSelf,
     destroySelf,
     closeCurrent,
+    hostExit,
+    setHostShortcuts,
     focusParent,
     closeVerdict,
     windowIdentity,

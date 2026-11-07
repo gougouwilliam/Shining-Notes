@@ -4,7 +4,26 @@
 3.3.0 起，摘录的高亮会**同步写进 PDF 文件本身**（换了阅读器也还在），顶栏是**常驻的全文搜索框**，并新增**视频笔记**。
 零外部依赖，全部资源（PDF.js、pdf-lib、CJK 字符映射、标准字体）随插件本地打包，**除划词翻译外不联网**。
 
-当前版本 **4.4.5**。
+当前版本 **4.4.6**。
+
+---
+
+## 更新记录 · 4.4.6（止血：不再销毁 Eagle 主窗口；插件期间独占快捷键）
+
+> **⚠️ 4.4.3 / 4.4.4 / 4.4.5 三版的关窗结论全部作废**，保留在下面仅作事故审计轨迹，勿再照抄。
+
+- **事故现象**：用户实测「不操作还能退；操作了要么连 Eagle 一起退出、要么没反应」，最后变成「最小化的 Eagle 双击都打不开」。`Eagle/app.asar` 与现场日志给出决定性证据：
+  - 插件预览页**跑在 Eagle 主窗口的 `<webview>` 里**（`app.asar` 注入的是 `window.windowID = webview.getWebContentsId()`，`parentID` 才是主窗口）。`openPreview` 那条 `new BrowserWindow` 路径属于别的预览器，v4.4.3 把它当成本插件路径，是根本误判。
+  - 因此主进程 `BrowserWindow.fromWebContents(event.sender)` 返回的是 **Eagle 主窗口**。`debug.log` 的 `[env] {"bw":"max"}` 正是主窗口最大化（与 `window-state.json` 的 `isMaximized:true` 吻合），不是「预览窗口最大化」。
+  - v4.4.4 发 `bw.close()`、v4.4.5 发 `bw.destroy()`，关掉/销毁的都是主窗口：`log.log` 08:44:53 起连续 `TypeError: Object has been destroyed at MenuItem.click`，正是用户双击托盘打不开的那几次。
+- **修复① 红线**（`bridge.js`）：`IPC_WINDOW_DENY` 在 `ipcWindow()` 入口硬拦截 `close / destroy / hide / minimize / maximize / unmaximize / show / showInactive / focus / restore / setFullScreen / setAlwaysOnTop`，只读探测（`isMaximized` 等）仍放行。`closeSelf` / `destroySelf` / `closeCurrent` / `closeWindow` 四条历史关窗通道全部退役（恒返回 false，零窗口 API）；`framewin.js` 的四层关窗兜底也清空，✕ 与 Ctrl+W 统一走 `App.exit()`。
+- **修复② 退出改用宿主官方通道**：`Bridge.hostExit()` 发 `parent.postMessage('Exit','*')` —— Eagle 主窗口监听 `message === "Exit"` → `leaveDetailMode()` 卸载 webview，主窗口无任何生命周期变化。`exitPlugin()` 预览分支 = 落盘 → 摘 `beforeunload` → **恢复 Eagle 快捷键** → 发一条 Exit → 600ms 仍活才用 `window.close()` 关掉当前 renderer（不经主进程）→ 1200ms 才提示。绝不并发关窗请求，不依赖 `window.closed`。
+- **修复③ 快捷键隔离（本次需求）**：
+  - **插件打开后** → `webContents.setIgnoreMenuShortcuts(true)`，屏蔽 Eagle 宿主菜单快捷键，ESC 等按键只由插件处理；这是 Eagle 自己对独立插件窗口采用的官方机制（`app/js/utils/ignoreMenuShortcuts.js`），经 `plugin.window.webContents.` 通道调用，**不碰窗口生命周期**。
+  - **插件关闭后** → `setIgnoreMenuShortcuts(false)` 立即恢复；`exitPlugin()`、`beforeunload`、`pagehide` 三处都有，覆盖用户点 Eagle 自己的 ✕、切条目、从插件界面直接退出 Eagle。
+  - **直接退出 Eagle 后重启** → 该开关是 webContents 的**运行时状态、不写盘**，Eagle 重启自动复位；插件每次启动还会先无条件发一次 `false` 再发 `true`（自愈上次残留），双保险。
+- 保留不变：ESC 无条件吞掉、浮层/搜索/输入优先级、退出前落盘、守卫三档取值契约、独立窗口形态走 `window.close()` 关自己、投影/数据/模型一律不动。
+- **Eagle 已打不开的恢复**：`window-state.json` 正常（`isMaximized:true`），主窗口对象是被 `destroy()` 销毁而非配置损坏。彻底退出 Eagle 进程后重新启动即可恢复；若托盘图标还在，先从任务管理器结束 `Eagle.exe` 再启动。升级到 4.4.6 后不会再发生。
 
 ---
 
