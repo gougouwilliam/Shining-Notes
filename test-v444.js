@@ -142,13 +142,13 @@ console.log('—— ⑥ app.js：预览分支的关窗序列 ——');
   ok(/now - exitSentAt < 1200/.test(seg), '连按 ESC 1.2s 防抖，不重复发 IPC');
   ok(/Bridge\.hostExit\(\)/.test(seg), 'v4.4.6：单一出口是宿主 Exit 消息');
   ok(!/Bridge\.closeCurrent\('destroy'\)/.test(seg), 'v4.4.6：sender destroy 已删除');
-  ok(/window\.close\(\)/.test(seg), '600ms 兜底只关当前 renderer，不碰主窗口');
-  ok(/}, 600\);/.test(seg) && /}, 1200\);/.test(seg), '600ms 单兜底 / 1200ms 提示');
+  ok(!/window\.close\(\)/.test(seg), 'v4.4.7：删掉无效的 window.close() 兜底（guest 里是空操作）');
+  ok(/}, 600\);/.test(seg) && /}, 1200\);/.test(seg), 'v4.4.7：600ms 串行补发 hostExit / 1200ms 提示');
   ok(/Bridge\.setHostShortcuts\(false\)/.test(seg), '退出时恢复 Eagle 快捷键');
   ok(!/Bridge\.(closeSelf|destroySelf)\(/.test(seg) && !/\.destroy\(\)/.test(seg),
     '不直接调 remote 关窗 API（那条路可能指回主窗口）');
-  ok(/dbg\('exit\.hostclose'/.test(seg) && /dbg\('exit\.rendererclose'/.test(seg) &&
-     /dbg\('exit\.stillalive'/.test(seg), 'v4.4.6 三级诊断日志齐全');
+  ok(/dbg\('exit\.hostclose'/.test(seg) && /dbg\('exit\.host\.retry'/.test(seg) &&
+     /dbg\('exit\.stillalive'/.test(seg), 'v4.4.7：hostclose / host.retry / stillalive 三级诊断齐全');
   ok(/若仍停留在预览，请点 Eagle 顶部的返回箭头退出/.test(seg), '极端情况仍给可执行提示');
 }
 

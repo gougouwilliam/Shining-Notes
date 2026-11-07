@@ -97,21 +97,34 @@ ok(!/br\.closeSelf\(\)/.test(FW) && !/br\.destroySelf\(\)/.test(FW) &&
 console.log('—— ④ hostExit：用 Eagle 官方 "Exit" 消息退出（行为级） ——');
 {
   const fnSrc = extractFn(BR, 'hostExit');
+  const evalSrc = extractFn(BR, 'hostRendererEval');
   ok(!!fnSrc && /postMessage\('Exit', '\*'\)/.test(fnSrc), '发给宿主的正是 "Exit"');
+  ok(!!evalSrc && /executeJavaScript/.test(evalSrc) && /plugin\.window\.webContents\./.test(evalSrc),
+    'v4.4.7：无宿主引用时走主窗口 executeJavaScript 通道');
+  /* 把 hostRendererEval 作为可注入桩，行为级真跑 hostExit */
+  const mk = (win, evalCalls) => new Function('window', 'Dbg', 'hostRendererEval',
+    fnSrc + '\nreturn hostExit;')(
+      win, { log() {} }, (code, tag) => { evalCalls.push([code, tag]); return true; });
   const calls = [];
   const parent = { postMessage: (...a) => calls.push(a) };
-  const win = { parent: parent, top: parent, opener: null };
-  const fn = new Function('window', 'Dbg', fnSrc + '\nreturn hostExit;')(win, { log() {} });
+  const evalCalls = [];
+  const fn = mk({ parent: parent, top: parent, opener: null }, evalCalls);
   ok(fn() === true && calls.length === 1 && calls[0][0] === 'Exit' && calls[0][1] === '*',
     'parent 有效时只发一条 Exit 给宿主，不重复发');
+  ok(evalCalls.length === 0, 'parent 可达时不走 executeJavaScript（不并发）');
   const calls2 = [];
   const p2 = { postMessage: (...a) => calls2.push(a) };
-  const win2 = { parent: p2, top: p2, opener: p2 };
-  const fn2 = new Function('window', 'Dbg', fnSrc + '\nreturn hostExit;')(win2, { log() {} });
+  const fn2 = mk({ parent: p2, top: p2, opener: p2 }, []);
   ok(fn2() === true && calls2.length === 1, 'parent/top/opener 指向同一对象时去重，不并发');
-  const win3 = { parent: null, top: null, opener: null };
-  const fn3 = new Function('window', 'Dbg', fnSrc + '\nreturn hostExit;')(win3, { log() {} });
-  ok(fn3() === false, '没有宿主引用时诚实返回 false，不假装关掉');
+  /* ★ 现场形态：guest 顶层文档，parent/top/opener 全为空（14:02 targets:0） */
+  const evalCalls3 = [];
+  const fn3 = mk({ parent: null, top: null, opener: null }, evalCalls3);
+  ok(fn3() === true && evalCalls3.length === 1,
+    '★ 现场 targets:0 时不再返回 false，改为请主窗口自己派发 Exit');
+  ok(/window\.postMessage\('Exit','\*'\)/.test(evalCalls3[0][0]) &&
+     /eaglenote-exit-ok/.test(evalCalls3[0][0]),
+    '执行的是官方 Exit 消息，并带可验证的返回值哨兵');
+  ok(evalCalls3[0][1] === 'exit.host', '结果写入 exit.host.ok / exit.host.err 便于现场定位');
   ok(/e\.data === "Exit"/.test(BR) && /leaveDetailMode/.test(BR),
     '注释写明宿主侧 message==="Exit" → leaveDetailMode()');
 }
@@ -150,7 +163,8 @@ console.log('—— ⑤ 快捷键隔离：开启即关、退出即恢复、启�
   ok(/Bridge\.setHostShortcuts\(false\)/.test(seg), '退出第一件事就是恢复 Eagle 快捷键');
   ok(/Bridge\.hostExit\(\)/.test(seg), '主路径是宿主 Exit 消息');
   ok(!/closeCurrent|closeSelf|destroySelf|ipcWindow/.test(seg), '分支内零窗口 API');
-  ok(/}, 600\);/.test(seg) && /window\.close\(\)/.test(seg), '600ms 才用 renderer 兜底，不与主路径并发');
+  ok(/}, 600\);/.test(seg) && /dbg\('exit\.host\.retry'/.test(seg) &&
+     !/window\.close\(\)/.test(seg), 'v4.4.7：600ms 串行补发 hostExit，删掉无效的 window.close() 兜底');
   ok(!/window\.closed|!alive\(\)/.test(seg), '兜底不再被 window.closed 短路');
   ok(/dbg\('exit\.hostclose'/.test(seg) && /dbg\('exit\.stillalive'/.test(seg), '退出结果写入 debug.log');
 }

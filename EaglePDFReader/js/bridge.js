@@ -961,12 +961,50 @@ const Bridge = (function () {
     return false;
   }
 
-  /* v4.4.6：把「退出预览」交还 Eagle 自己，零窗口 API。
-     Eagle 主窗口监听 window 的 message 事件：e.data === "Exit" →
-     $scope.leaveDetailMode()（app.asar @1644768）。官方 viewer.html 与 3D
-     viewer 用的就是 parent.postMessage("Exit","*")。这条路只在宿主内部
-     把详情模式收起来、卸载 webview，主窗口不会有任何生命周期变化。 */
+  /* v4.4.7：把「退出预览」交还 Eagle 自己，零窗口 API —— 走**可达**的通道。
+     ────────────────────────────────────────────────────────────
+     v4.4.6 只试 window.parent / top / opener.postMessage('Exit','*')，
+     但预览插件跑在 Eagle 主窗口 <webview> 的 **guest 顶层 browsing context**：
+     parent === top === window、opener 为 null。现场 14:02 debug.log 的
+       exit.host {"sent":0,"targets":0}
+     就是铁证 —— 一条都没发出去。同轮 600ms 的 window.close() 也没关掉
+     guest（exit.rendererclose 之后仍 exit.stillalive）：Chromium 只允许
+     脚本关闭「由脚本自己打开」的窗口。两条出口全断，ESC 于是完全无感。
+
+     真正可达的通道：主进程 @22653580 的
+       ipcMain.handle('plugin.window.webContents.', …)
+         → BrowserWindow.fromWebContents(event.sender).webContents
+     在 webview 形态下拿到的正是 **Eagle 主窗口的 webContents**。调它的
+     executeJavaScript，就能让主窗口自己 window.postMessage('Exit','*')。
+     主窗口 @1644768 有官方监听器：
+       eventer('message', e => { if (e.data === "Exit") $scope.leaveDetailMode() })
+     于是由宿主自己卸载 webview —— 零 BrowserWindow 方法、不碰生命周期，
+     也不依赖菜单快捷键（插件期间的快捷键隔离照常开启，互不干扰）。
+
+     返回值带 'eaglenote-exit-ok' 哨兵：exit.host.ok 里能看到它，
+     就能证明代码确实在主窗口执行过，而不是「IPC 发出去但没送达」。 */
+  function hostRendererEval(code, tag) {
+    try {
+      if (typeof require !== 'function') return false;
+      const el = require('electron') || {};
+      const ipc = el.ipcRenderer;
+      if (!ipc || typeof ipc.invoke !== 'function') return false;
+      const pending = ipc.invoke('plugin.window.webContents.', {
+        method: 'executeJavaScript', value: code
+      });
+      if (pending && typeof pending.then === 'function') {
+        pending.then((r) => {
+          try { if (typeof Dbg !== 'undefined') Dbg.log(tag + '.ok', { result: r === undefined ? null : r }); } catch (e) { /* ignore */ }
+        }).catch((err) => {
+          try { if (typeof Dbg !== 'undefined') Dbg.log(tag + '.err', { error: String((err && err.message) || err) }); } catch (e) { /* ignore */ }
+        });
+      }
+      return true;
+    } catch (e) { return false; }
+  }
+
   function hostExit() {
+    /* ① 独立插件窗口 / iframe 形态：parent / top / opener 可以直达宿主 */
     const targets = [];
     try { if (window.parent && window.parent !== window) targets.push(window.parent); } catch (e) { /* ignore */ }
     try { if (window.top && window.top !== window && window.top !== window.parent) targets.push(window.top); } catch (e) { /* ignore */ }
@@ -975,8 +1013,21 @@ const Bridge = (function () {
     for (let i = 0; i < targets.length; i++) {
       try { targets[i].postMessage('Exit', '*'); sent++; } catch (e) { /* ignore */ }
     }
-    try { if (typeof Dbg !== 'undefined') Dbg.log('exit.host', { sent: sent, targets: targets.length }); } catch (e) { /* ignore */ }
-    return sent > 0;
+    if (sent > 0) {
+      try { if (typeof Dbg !== 'undefined') Dbg.log('exit.host', { sent: sent, targets: targets.length, via: 'parent' }); } catch (e) { /* ignore */ }
+      return true;
+    }
+    /* ② webview guest（现场形态）：请主窗口自己派发官方 Exit 消息。
+       用 Eagle 自带 viewer.html 同款写法，主窗口收到 e.data === "Exit"
+       后调用 leaveDetailMode()，只收起详情视图、不动主窗口。 */
+    const code = "window.postMessage('Exit','*'); 'eaglenote-exit-ok';";
+    const ok = hostRendererEval(code, 'exit.host');
+    try {
+      if (typeof Dbg !== 'undefined') {
+        Dbg.log('exit.host', { sent: ok ? 1 : 0, targets: 0, via: ok ? 'executeJavaScript' : 'none' });
+      }
+    } catch (e) { /* ignore */ }
+    return ok;
   }
 
   /* v4.4.6：宿主快捷键开关（用户要求「开插件即关 Eagle 快捷键，退出即恢复」）。

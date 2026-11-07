@@ -4,7 +4,27 @@
 3.3.0 起，摘录的高亮会**同步写进 PDF 文件本身**（换了阅读器也还在），顶栏是**常驻的全文搜索框**，并新增**视频笔记**。
 零外部依赖，全部资源（PDF.js、pdf-lib、CJK 字符映射、标准字体）随插件本地打包，**除划词翻译外不联网**。
 
-当前版本 **4.4.6**。
+当前版本 **4.4.7**。
+
+---
+
+## 更新记录 · 4.4.7（修复「无论是否操作，ESC 都退不出插件」）
+
+> **⚠️ 4.4.3 / 4.4.4 / 4.4.5 的关窗结论、4.4.6 的 Exit 送达方式均已作废**，保留在下面仅作事故审计轨迹。**关窗红线不变：绝不通过 `plugin.window.` / `@electron/remote` 对窗口对象执行 close / destroy / hide / minimize 等生命周期方法。**
+
+- **现场现象**：4.4.6 部署后用户反馈「打开插件，无论是否操作，ESC 都没作用」。`debug.log` 14:02 / 14:03 给出决定性证据：
+  - `exit.host {"sent":0,"targets":0}` —— `hostExit()` 试图给 `window.parent` / `top` / `opener` 发 `Exit`，但**一个目标都没有**。
+  - `exit.hostclose {"sent":false}` → `exit.rendererclose {}`（600ms 兜底执行）→ `exit.stillalive {"sent":false}` —— 页面仍在，两条出口全断。
+- **根因**：预览页是 Eagle 主窗口 `<webview>` 的 **guest 顶层 browsing context**，不是 iframe。`window.parent === window.top === window`、`opener` 为 null，所以 `parent.postMessage('Exit','*')` 天生发不到宿主（Eagle 里用 `parent.postMessage` 的两个 viewer 都是 iframe 形态，有 `window.frameElement`）。另外，Chromium 只允许脚本关闭「由脚本自己打开」的窗口，guest 里的 `window.close()` 是**空操作**——这正是 v4.4.6 600ms 兜底无效的原因。
+- **修复：换成真正可达的宿主通道**（`bridge.js`）：
+  - 主进程 `ipcMain.handle('plugin.window.webContents.', …)`（`app.asar @22653580`）用 `BrowserWindow.fromWebContents(event.sender).webContents` 取到的正是 **Eagle 主窗口 webContents**。
+  - 新增 `hostRendererEval()`，走该通道调 `executeJavaScript`，让**主窗口自己**执行 `window.postMessage('Exit','*')`；主窗口 `@1644768` 的官方监听器 `e.data === "Exit"` → `$scope.leaveDetailMode()` 卸载 webview。
+  - 全程零 `BrowserWindow` 方法、不碰窗口生命周期，**也不依赖菜单快捷键**——所以用户要求的「插件期间屏蔽 Eagle 快捷键」可以照常开启，与退出互不干扰。
+  - 执行代码带 `'eaglenote-exit-ok'` 返回值哨兵：成功会写 `exit.host.ok {result:"eaglenote-exit-ok"}`（证明代码真在主窗口跑过），失败写 `exit.host.err`；`exit.host` 行还会记 `via: "executeJavaScript" / targets: 0`，现场一眼可判通道。
+  - 独立窗口 / iframe 形态仍优先用 `parent.postMessage`（快速路径），且不与新通道并发。
+- **退出分支**（`app.js`）：落盘 → 摘 `beforeunload` → 恢复 Eagle 快捷键 → 一条 Exit → 600ms 仍活才**串行补发一条**（幂等，防 IPC 丢包）→ 1200ms 才提示。删掉已被证伪的渲染层自关兜底；连按防抖、ESC 分级策略、零窗口 API 全部不变。
+- 更正 `winguard.js` / `escguard.js` 头部注释，避免把「parent.postMessage 可达」当成事实继续误导。
+- **实测判据**：重启 Eagle 后打开文档、点一下、按 ESC，理想日志为 `exit.hostclose {sent:true}` → `exit.host {via:"executeJavaScript"}` → `exit.host.ok {result:"eaglenote-exit-ok"}`，随后预览正常收起、Eagle 主窗口完好。若仍停留，看 `exit.host.err` 与 `exit.stillalive` 即可区分 IPC 失败与宿主未响应。
 
 ---
 

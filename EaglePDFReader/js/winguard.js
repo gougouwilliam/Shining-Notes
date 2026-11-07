@@ -20,9 +20,14 @@
  *
  * 于是本模块的三档裁决**只用于描述形态，不再用于放行任何 close/destroy**：
  * 所有窗口关闭类方法已在 bridge.js 的 IPC_WINDOW_DENY 硬拦截；退出统一
- * 走 hostExit() —— parent.postMessage('Exit','*') 触发 Eagle 自己的
- * leaveDetailMode()。destroy 不触发 'close' 事件、不跑 beforeunload、
- * 不受 sticky activation 影响，这些只是历史备注，本插件永不再调用。
+ * 走 hostExit()。⚠️ v4.4.6 那条 parent.postMessage('Exit','*') 同样不通：
+ * guest 是顶层文档（parent === top === window、opener 为 null），
+ * 14:02 现场 exit.host {"sent":0,"targets":0}；600ms 的渲染层自关兜底
+ * 也是空操作。v4.4.7 改走 plugin.window.webContents. 的 executeJavaScript，
+ * 让 **Eagle 主窗口自己** postMessage('Exit','*')，命中宿主
+ * e.data === 'Exit' → leaveDetailMode()。destroy 不触发 'close' 事件、
+ * 不跑 beforeunload、不受 sticky activation 影响，这些只是历史备注，
+ * 本插件永不再调用。
  *
  * 三档许可的取值契约保持兼容旧回归套件：
  *   allow            → 严格证明自己是独立窗口（selfId + 窗口列表双重佐证）

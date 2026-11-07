@@ -6547,14 +6547,19 @@
       if (Bridge.windowIdentity) dbg('exit.env', Bridge.windowIdentity());
     } catch (e) { dbg('exit.guard.err', e); }
 
-    /* v4.4.6 终局：预览插件跑在 Eagle 主窗口的 <webview> 里。
+    /* v4.4.7 终局：预览插件跑在 Eagle 主窗口的 <webview> 里。
        08:44 现场 [env] {"bw":"max"} + log.log 连续
        "TypeError: Object has been destroyed at MenuItem.click" 证明：
        plugin.window. 的 BrowserWindow.fromWebContents(event.sender) 拿到的是
        **Eagle 主窗口**；v4.4.4 的 bw.close()、v4.4.5 的 bw.destroy()
        关掉/销毁的正是主窗口（用户说的「一起退出」「最小化后双击打不开」）。
-       从此预览分支一个 BrowserWindow 方法都不碰：只发 Eagle 官方的
-       "Exit" 消息给宿主，由 leaveDetailMode() 卸载 webview。 */
+       从此预览分支一个 BrowserWindow 方法都不碰。
+
+       v4.4.6 的宿主 Exit 通道也不可达：guest 是顶层文档，parent/top/opener
+       全为空，14:02 日志 exit.host {"sent":0,"targets":0}；600ms 的
+       window.close() 同样无效（rendererclose 之后仍 stillalive）。
+       v4.4.7 改由 Bridge.hostExit() 走 plugin.window.webContents. 的
+       executeJavaScript，让宿主自己派发 Exit → leaveDetailMode()。 */
     if (!verdict.allow && verdict.allowWindowClose) {
       const now = Date.now();
       /* 连按 ESC 只发一轮请求；1.2s 后可重试 */
@@ -6566,13 +6571,13 @@
       let sent = false;
       try { sent = !!(Bridge.hostExit && Bridge.hostExit()); } catch (e) { /* ignore */ }
       dbg('exit.hostclose', { sent: sent, code: verdict.code });
-      /* 单一兜底：hostExit 没送达时，才用 renderer 自己的 window.close()
-         关掉当前 browsing context（webview guest），不经过主进程、碰不到主窗口。
-         v4.4.3 实测这条路不会动 Eagle 主界面。绝不并发其它关窗请求；
-         timer 能执行本身就说明页面还在，不依赖浏览器关闭标志。 */
+      /* 600ms 仍活：串行补发一条（幂等，防 IPC 丢包）。绝不并发关窗请求；
+         页面若已被宿主卸载，这个 timer 根本不会执行，不依赖浏览器关闭标志。
+         已删除 v4.4.6 的渲染层自关兜底 —— 现场证明 guest 里那是空操作。 */
       setTimeout(() => {
-        try { window.close(); } catch (e) { /* ignore */ }
-        dbg('exit.rendererclose', {});
+        let retry = false;
+        try { retry = !!(Bridge.hostExit && Bridge.hostExit()); } catch (e) { /* ignore */ }
+        dbg('exit.host.retry', { sent: retry });
       }, 600);
       setTimeout(() => {
         dbg('exit.stillalive', { sent: sent });

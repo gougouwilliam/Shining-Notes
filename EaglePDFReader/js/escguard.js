@@ -16,7 +16,9 @@
  *
  * 现在 exit-plugin 的语义是：落盘 → 恢复 Eagle 快捷键 → 给宿主发
  * "Exit" 消息让 leaveDetailMode() 收起预览，一个窗口 API 都不碰。
- * 这里的分级判定从未判错，别再改本文件的决策。
+ * v4.4.7 补记：Exit 的**送达方式**换了（parent.postMessage 在 guest
+ * 里发不出去，改为主窗口 executeJavaScript 自己派发），但分级策略与
+ * 「零窗口 API」结论都不变。这里的判定从未判错，别再改本文件的决策。
  */
 (function (global) {
   'use strict';

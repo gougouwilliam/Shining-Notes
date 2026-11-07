@@ -71,8 +71,8 @@ console.log('—— ③ 预览分支：单一出口，零并发 ——');
   ok(/Bridge\.setHostShortcuts\(false\)/.test(seg), 'v4.4.6：退出前恢复宿主快捷键');
   ok(!/Bridge\.(closeSelf|destroySelf)\(/.test(seg) && !/\.destroy\(\)/.test(seg),
     '不碰 remote 的 closeSelf / destroySelf');
-  ok(/dbg\('exit\.hostclose'/.test(seg) && /dbg\('exit\.rendererclose'/.test(seg) &&
-     /dbg\('exit\.stillalive'/.test(seg), 'v4.4.6：host / renderer / stillalive 三级诊断齐全');
+  ok(/dbg\('exit\.hostclose'/.test(seg) && /dbg\('exit\.host\.retry'/.test(seg) &&
+     /dbg\('exit\.stillalive'/.test(seg), 'v4.4.7：hostclose / host.retry / stillalive 三级诊断齐全');
   ok(/若仍停留在预览，请点 Eagle 顶部的返回箭头退出/.test(seg), '极端情况仍有可执行提示');
   ok(/destroy 不触发/.test(WG_SRC) && /beforeunload/.test(WG_SRC),
     'winguard 注释写明 destroy 绕过 close 事件与 beforeunload');
