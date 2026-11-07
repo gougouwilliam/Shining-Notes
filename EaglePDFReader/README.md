@@ -4,7 +4,23 @@
 3.3.0 起，摘录的高亮会**同步写进 PDF 文件本身**（换了阅读器也还在），顶栏是**常驻的全文搜索框**，并新增**视频笔记**。
 零外部依赖，全部资源（PDF.js、pdf-lib、CJK 字符映射、标准字体）随插件本地打包，**除划词翻译外不联网**。
 
-当前版本 **4.4.7**。
+当前版本 **4.4.8**。
+
+---
+
+## 更新记录 · 4.4.8（修复「必须点一次插件界面，ESC 才能退出」）
+
+> 关窗红线不变：绝不通过 `plugin.window.` / `@electron/remote` 对窗口对象执行 close / destroy / hide / minimize 等生命周期方法；ESC 绝不交还宿主；4.4.7 的宿主 Exit 通道原样保留。
+
+- **现场现象**：4.4.7 部署后，用户反馈「必须要点一次插件的界面，才能用 ESC 退出；用插件直接打开，按 ESC 还是没反应」。`debug.log` 14:18~14:19 给出决定性证据：凡是退出成功的那几次，都是
+  `exit.hostclose {sent:true}` → `exit.host {via:"executeJavaScript"}` → `exit.host.ok {result:"eaglenote-exit-ok"}`；而「直接打开就按 ESC」的情形 guest 里**一行日志都没有** —— 不是退出失败，是按键根本没送到插件。
+- **根因：焦点，不是关窗**。预览页是 Eagle 主窗口 `<webview>` 的 guest。刚打开时键盘焦点仍留在主窗口，ESC 不会派给 guest；而插件启动时的 `setIgnoreMenuShortcuts(true)` 又把宿主菜单快捷键屏蔽了，于是这一下 ESC **两边都没人处理**。点一下界面会触发 `pointerdown` 里的 `window.focus()`，焦点落进 guest，ESC 才立刻生效。此前 4.4.4~4.4.6 把它归因于 sticky activation / 关窗通道，都是误判。
+- **修复① 接管焦点**（`bridge.js` `focusGuest()` + `app.js`）：通过主窗口 `webContents.executeJavaScript`，让宿主对自己的 `<webview>` 调 `focus()`；按 `window.windowID`（Eagle 在 dom-ready 注入的 `webview.getWebContentsId()`）精确匹配，拿不到时按插件目录 URL 兜底。`Bridge.ready()` 之后分 **0 / 150 / 450 / 1000 / 2000ms** 五次重试，覆盖 webview 创建、主窗口抢回焦点、首屏渲染完再抢一次。每次把宿主返回值与 guest 的 `hasFocus()` 写进 `focus.host.ok` / `focus.self`。
+- **修复② 宿主 ESC 转发桥**（`bridge.js` `installHostEscBridge()` / `initHostEscReceiver()`）：焦点万一仍在主窗口，主窗口 document 捕获 ESC 后不再让宿主自己处理，而是 `webview.send('eaglenote:esc')` 转给 guest；guest 把它转成**合成 keydown** 派给 window，于是照旧命中 `app.js` 的捕获监听 → `escguard` 分级 → `exitPlugin()` 的**落盘 / 恢复快捷键 / 宿主 Exit**。绝不直接 `postMessage('Exit')` 绕过落盘，也绝不把 ESC 交还宿主。
+  - 桥在 **boot 同步段**就挂上（不等 `Bridge.ready()` 的异步等待），`ready` 后用精确 id 幂等重挂；焦点已在 guest 时不转发（避免双触发）；webview 被卸载后下一次按键自动摘除监听且**不拦截事件**；`beforeunload` / `pagehide` 显式卸载。
+  - 两条修复都只走 `plugin.window.webContents.` 的 `executeJavaScript`（主窗口 DOM 层），一个 `BrowserWindow` 方法都没碰。
+- **诊断**：`hostesc.install.ok/err`、`focus.host.ok/err`、`focus.self`、`hostesc.recv`、`esc.key {src:"real"|"host", hasFocus}` 写进 `debug.log`，现场一眼可判按键是真实进 guest 还是走转发桥。
+- **实测判据**：重启 Eagle（让新插件生效）后，**打开文档不点任何地方直接按 ESC**，预览应正常收起、Eagle 主窗口完好。理想日志为 `hostesc.install.ok {result:"installed"}` → `focus.host.ok {result:"focused:true"}` → `esc.key {src:"real"}`（或焦点没进来时 `hostesc.recv` + `esc.key {src:"host"}`）→ `exit.hostclose {sent:true}` → `exit.host.ok {result:"eaglenote-exit-ok"}`。若仍无反应，先看有没有 `esc.key`：没有说明焦点与桥都没到位，再查 `hostesc.install.err`。
 
 ---
 

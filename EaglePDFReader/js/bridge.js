@@ -1003,6 +1003,166 @@ const Bridge = (function () {
     } catch (e) { return false; }
   }
 
+  /* v4.4.8：「必须先点一下插件界面，ESC 才能退出」
+     ────────────────────────────────────────────────────────────
+     14:18~14:19 现场日志里，凡是退出成功的都有 exit.host.ok；而「直接
+     打开就按 ESC」时 guest 里**一行日志都没有** —— 按键根本没进插件。
+     原因是 <webview> 刚加载时键盘焦点仍在 Eagle 主窗口：插件这边
+     setIgnoreMenuShortcuts(true) 已经屏蔽了宿主的菜单快捷键，guest 又
+     没拿到焦点，ESC 于是谁都没处理。点一下界面触发 pointerdown 里的
+     window.focus()，焦点才落到 guest，ESC 立刻生效。
+
+     两条修复都只走 plugin.window.webContents. 的 executeJavaScript
+     （主窗口 DOM 层），一个 BrowserWindow 方法都不碰：
+       ① focusGuest()：让主窗口对自己的 <webview> 调 focus()；
+       ② 宿主 ESC 转发桥：焦点万一仍在主窗口，主窗口捕获 ESC 后不再
+          自己处理（会被快捷键隔离吞掉），而是用 webview.send 把这一下
+          转给 guest → 转成合成 keydown → 依然走 app.js 的 escguard 分级
+          与 exitPlugin() 的落盘/恢复/宿主 Exit。绝不直接 postMessage
+          ('Exit') 绕过落盘，也绝不把 ESC 交还宿主。 */
+
+  const HOST_ESC_CHANNEL = 'eaglenote:esc';
+  let hostEscHooked = false;
+
+  function guestWebContentsId() {
+    try {
+      const id = (typeof window !== 'undefined') ? Number(window.windowID) : 0;
+      return (isFinite(id) && id > 0) ? id : null;
+    } catch (e) { return null; }
+  }
+
+  /* 在主窗口 DOM 里定位承载本插件的 <webview>：
+     ① windowID（Eagle 在 dom-ready 注入的 webview.getWebContentsId()）精确匹配；
+     ② URL 含插件目录 id / EaglePDFReader；
+     ③ 退回最后一个仍可见的 webview。 */
+  const PICK_WEBVIEW_BODY = [
+    "var list = document.querySelectorAll('webview');",
+    'var wv = null;',
+    'if (want != null) { for (var i = 0; i < list.length && !wv; i++) {',
+    '  try { if (list[i].getWebContentsId && list[i].getWebContentsId() === want) wv = list[i]; } catch (e) {}',
+    '} }',
+    'if (!wv) { for (var j = 0; j < list.length && !wv; j++) {',
+    "  var u = ''; try { u = list[j].getURL ? list[j].getURL() : (list[j].src || ''); } catch (e) {}",
+    "  if (u.indexOf('LB7PDFRDK3QM') >= 0 || u.indexOf('EaglePDFReader') >= 0) wv = list[j];",
+    '} }',
+    'if (!wv) { for (var k = 0; k < list.length; k++) { if (list[k].offsetParent !== null) wv = list[k]; } }'
+  ].join('\n');
+
+  function hostScript(body, wid) {
+    return '(function(){\nvar want = ' + (wid > 0 ? String(wid) : 'null') + ';\n'
+      + PICK_WEBVIEW_BODY + '\n' + body + '\n})();';
+  }
+
+  /* 带返回值的宿主脚本执行：hostRendererEval 只回报「发没发出去」，
+     这里把 executeJavaScript 的真实结果带回来用于焦点重试判据。 */
+  function hostRendererCall(code, tag) {
+    const t = tag || 'host.eval';
+    try {
+      if (typeof require !== 'function') return Promise.resolve(null);
+      const el = require('electron') || {};
+      const ipc = el.ipcRenderer;
+      if (!ipc || typeof ipc.invoke !== 'function') return Promise.resolve(null);
+      const pending = ipc.invoke('plugin.window.webContents.', {
+        method: 'executeJavaScript', value: code
+      });
+      return Promise.resolve(pending).then((r) => {
+        try { if (typeof Dbg !== 'undefined') Dbg.log(t + '.ok', { result: r === undefined ? null : r }); } catch (e) { /* ignore */ }
+        return (r == null) ? null : r;
+      }).catch((err) => {
+        try { if (typeof Dbg !== 'undefined') Dbg.log(t + '.err', { error: String((err && err.message) || err) }); } catch (e) { /* ignore */ }
+        return null;
+      });
+    } catch (e) {
+      try { if (typeof Dbg !== 'undefined') Dbg.log(t + '.err', { error: String((e && e.message) || e) }); } catch (x) { /* ignore */ }
+      return Promise.resolve(null);
+    }
+  }
+
+  function focusGuestCode(wid) {
+    return hostScript([
+      "if (!wv) return 'no-webview';",
+      'try { wv.focus(); } catch (e) { return "focus-err:" + (e && e.message); }',
+      'try { var wc = wv.getWebContents && wv.getWebContents(); if (wc && wc.focus) wc.focus(); } catch (e) {}',
+      "return 'focused:' + (document.activeElement === wv);"
+    ].join('\n'), wid);
+  }
+
+  function focusGuest(tag) {
+    const t = tag || 'focus.host';
+    /* guest 自己也试一次：在部分 Electron 构建里这一步就够了，且完全无害 */
+    try { window.focus(); } catch (e) { /* ignore */ }
+    return hostRendererCall(focusGuestCode(guestWebContentsId()), t);
+  }
+
+  function hostEscBridgeCode(wid, enable) {
+    if (!enable) {
+      return "(function(){var b=window.__eaglenoteEscBridge;if(b&&b.remove)b.remove();return 'removed';})();";
+    }
+    return hostScript([
+      "if (!wv) return 'no-webview';",
+      "var KEY = '__eaglenoteEscBridge';",
+      'var old = window[KEY]; if (old && old.remove) old.remove();',
+      'var alive = true;',
+      'function remove() {',
+      '  if (!alive) return; alive = false;',
+      "  try { document.removeEventListener('keydown', h, true); } catch (e) {}",
+      '  try { delete window[KEY]; } catch (e) { window[KEY] = null; }',
+      '}',
+      'function h(e) {',
+      "  if (e.key !== 'Escape' && e.keyCode !== 27) return;",
+      '  if (!document.contains(wv)) { remove(); return; }',
+      '  if (document.activeElement === wv) return;',
+      "  var ae = document.activeElement;",
+      "  if (ae && ae.tagName === 'WEBVIEW') return;",
+      '  try { e.preventDefault(); e.stopImmediatePropagation(); } catch (err) {}',
+      "  try { wv.send('" + HOST_ESC_CHANNEL + "'); }",
+      '  catch (err) {',
+      "    try { wv.executeJavaScript(\"window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))\"); }",
+      "    catch (e2) { window.postMessage('Exit','*'); }",
+      '  }',
+      '}',
+      "document.addEventListener('keydown', h, true);",
+      'window[KEY] = { remove: remove, wv: wv };',
+      "return 'installed';"
+    ].join('\n'), wid);
+  }
+
+  function installHostEscBridge(enable) {
+    const on = enable !== false;
+    return hostRendererCall(hostEscBridgeCode(guestWebContentsId(), on),
+      on ? 'hostesc.install' : 'hostesc.remove');
+  }
+
+  /* guest 端：宿主转来的 ESC 变成合成 keydown 派给 window，
+     于是照旧命中 app.js 的 window 捕获监听 → escguard 分级 → exitPlugin()。
+     落盘、快捷键恢复、宿主 Exit 一个都不少，绝不是「直接关掉预览」。 */
+  function initHostEscReceiver() {
+    if (hostEscHooked) return true;
+    try {
+      if (typeof require !== 'function') return false;
+      const el = require('electron') || {};
+      const ipc = el.ipcRenderer;
+      if (!ipc || typeof ipc.on !== 'function') return false;
+      hostEscHooked = true;
+      ipc.on(HOST_ESC_CHANNEL, () => {
+        try {
+          if (typeof Dbg !== 'undefined') {
+            Dbg.log('hostesc.recv', { hasFocus: document.hasFocus ? document.hasFocus() : null });
+          }
+        } catch (e) { /* ignore */ }
+        try { window.focus(); } catch (e) { /* ignore */ }
+        try {
+          window.dispatchEvent(new KeyboardEvent('keydown', {
+            key: 'Escape', code: 'Escape', bubbles: true, cancelable: true
+          }));
+        } catch (err) {
+          try { if (window.App && typeof window.App.exit === 'function') window.App.exit(); } catch (e2) { /* ignore */ }
+        }
+      });
+      return true;
+    } catch (e) { return false; }
+  }
+
   function hostExit() {
     /* ① 独立插件窗口 / iframe 形态：parent / top / opener 可以直达宿主 */
     const targets = [];
@@ -1204,6 +1364,12 @@ const Bridge = (function () {
     destroySelf,
     closeCurrent,
     hostExit,
+    hostRendererCall,
+    focusGuest,
+    focusGuestCode,
+    installHostEscBridge,
+    hostEscBridgeCode,
+    initHostEscReceiver,
     setHostShortcuts,
     focusParent,
     closeVerdict,
@@ -1219,5 +1385,8 @@ const Bridge = (function () {
   };
 })();
 
-/* 脚本一加载就注册回调：早于主进程 dom-ready+100ms 的 plugin-create 广播 */
+/* 脚本一加载就注册回调：早于主进程 dom-ready+100ms 的 plugin-create 广播。
+   v4.4.8：ESC 转发接收器同样要尽早挂上 —— 用户可能在 boot 的异步
+   初始化还没跑完时就已经按了 ESC。 */
 try { Bridge.initHooks(); } catch (e) { /* ignore */ }
+try { Bridge.initHostEscReceiver(); } catch (e) { /* ignore */ }

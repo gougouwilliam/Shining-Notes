@@ -1,4 +1,4 @@
-# 功能自查对照表（v4.4.7）
+# 功能自查对照表（v4.4.8）
 
 > 生成方式：`node verify-features.js`。每一项都对着**源码**找实现点，
 > 再去 `test-*.js` 里找有没有对应断言。**这是静态核对，不是界面实测** ——
@@ -10,7 +10,7 @@
 | 🟡 | 实现点齐，但没有自动测试（多半是纯界面行为） |
 | ❌ | 找不到实现点（要修） |
 
-**合计 107 项：✅ 77 · 🟡 30 · ❌ 0**
+**合计 110 项：✅ 80 · 🟡 30 · ❌ 0**
 
 ## A. 打开与切换
 
@@ -29,7 +29,7 @@
 | --- | --- | --- | --- |
 | 🟡 | 页码跳转 / 上一页下一页 | `js/app.js` | — |
 | 🟡 | 缩放（加减 / 适宽 / Ctrl+滚轮） | `js/app.js` `js/viewer.js` | — |
-| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 73 处 |
+| ✅ | 目录（PDF outline） | `js/pdfdoc.js` `js/app.js` | 74 处 |
 | ✅ | 缩略图惰性渲染 | `js/app.js` | 13 处 |
 | ✅ | 目录 / 缩略图弹出面板（v4.1，原左栏） | `js/app.js` `css/app.css` | 5 处 |
 | ✅ | 全文搜索（常驻框 + 计数 + 弹出结果面板） | `js/search.js` `js/app.js` | 64 处 |
@@ -136,21 +136,24 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 89 处 |
-| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 89 处 |
-| ✅ | v4.4.7 退出走宿主 Exit 消息，零窗口 API（绝不销毁 Eagle 主窗口） | `js/bridge.js` `js/app.js` | 22 处 |
+| ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 102 处 |
+| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 102 处 |
+| ✅ | v4.4.7 退出走宿主 Exit 消息，零窗口 API（绝不销毁 Eagle 主窗口） | `js/bridge.js` `js/app.js` | 24 处 |
 | ✅ | 关不掉时常驻横幅 + 再试/最小化 | `js/app.js` `css/app.css` | 1 处 |
 | 🟡 | ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役） | `js/app.js` | — |
 | ✅ | v4.4.1 关窗身份守卫：绝不把 close/destroy 施加到 Eagle 主窗口 | `js/winguard.js` `js/bridge.js` `js/app.js` | 1 处 |
 | ✅ | v4.4.1 宿主恢复兜底：只 restore/show，不 minimize/hide | `js/bridge.js` `js/app.js` | 12 处 |
 | 🟡 | v4.4.3 两级许可：预览窗口 windowID≠parentID 时放行 window.close、仍封死 remote | `js/winguard.js` `js/app.js` | — |
-| ✅ | v4.4.6 退出诊断：exit.env / exit.hostclose / exit.stillalive | `js/app.js` | 1 处 |
-| ✅ | v4.4.6 关闭类 IPC 硬拦截 + 四条历史关窗通道退役 | `js/bridge.js` | 9 处 |
+| ✅ | v4.4.6 退出诊断：exit.env / exit.hostclose / exit.stillalive | `js/app.js` | 2 处 |
+| ✅ | v4.4.6 关闭类 IPC 硬拦截 + 四条历史关窗通道退役 | `js/bridge.js` | 10 处 |
 | 🟡 | v4.4.4 退出前摘掉 beforeunload，点击后 window.close 不再被拦 | `js/app.js` | — |
 | 🟡 | v4.4.7 预览 ESC 单一出口：一条宿主 Exit + 600ms 串行补发 | `js/app.js` `js/winguard.js` | — |
-| ✅ | v4.4.6 hostExit / setHostShortcuts 结果写 debug.log | `js/bridge.js` | 15 处 |
+| ✅ | v4.4.6 hostExit / setHostShortcuts 结果写 debug.log | `js/bridge.js` | 18 处 |
 | ✅ | v4.4.7 宿主 Exit 改走主窗口 executeJavaScript（guest 顶层文档 parent 不可达） | `js/bridge.js` | 9 处 |
-| ✅ | v4.4.6 快捷键隔离：开插件即屏蔽 Eagle 菜单快捷键，退出/卸载即恢复 | `js/bridge.js` `js/app.js` | 13 处 |
+| ✅ | v4.4.6 快捷键隔离：开插件即屏蔽 Eagle 菜单快捷键，退出/卸载即恢复 | `js/bridge.js` `js/app.js` | 14 处 |
+| ✅ | v4.4.8 启动接管键盘焦点：主窗口对自己的 webview 调 focus()，5 次重试 + hasFocus 日志 | `js/bridge.js` `js/app.js` | 7 处 |
+| ✅ | v4.4.8 宿主 ESC 转发桥：焦点在主窗口时 send 给 guest，不交还宿主、零窗口 API | `js/bridge.js` `js/app.js` | 3 处 |
+| ✅ | v4.4.8 guest 接收器把转发 ESC 转合成 keydown，照旧走分级 + 落盘 + 宿主 Exit | `js/bridge.js` `js/app.js` | 2 处 |
 | ✅ | Ctrl+W 关闭 | `js/app.js` | 14 处 |
 | 🟡 | 预览模式紧凑布局（mode-preview） | `css/app.css` | — |
 | 🟡 | 窗口底色跟随主题（不闪白） | `js/bridge.js` | — |
@@ -166,8 +169,8 @@
 | ✅ | 回收站文件 trash.json | `js/store.js` | 9 处 |
 | 🟡 | 换大版本自动清库（migrateEpoch） | `js/store.js` | — |
 | ✅ | 写 PDF 前先备份（pdfbak） | `js/pdfwrite.js` `js/store.js` | 2 处 |
-| ✅ | 清数据连素材副本一起清（media/） | `js/store.js` | 50 处 |
-| ✅ | 运行日志 debug.log（200KB 轮转） | `js/dbg.js` | 22 处 |
+| ✅ | 清数据连素材副本一起清（media/） | `js/store.js` | 53 处 |
+| ✅ | 运行日志 debug.log（200KB 轮转） | `js/dbg.js` | 24 处 |
 
 ## K. 稳定性
 

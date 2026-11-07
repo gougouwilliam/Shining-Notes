@@ -19,6 +19,11 @@
  * v4.4.7 补记：Exit 的**送达方式**换了（parent.postMessage 在 guest
  * 里发不出去，改为主窗口 executeJavaScript 自己派发），但分级策略与
  * 「零窗口 API」结论都不变。这里的判定从未判错，别再改本文件的决策。
+ *
+ * v4.4.8 补记：「必须点一下界面才能用 ESC」同样与这里的分级判定无关 ——
+ * 根因是 webview 刚打开时焦点还在主窗口、按键压根没送到 guest。修复在
+ * bridge.js（焦点接管 + 宿主 ESC 转发桥），转发来的按键会变成合成
+ * keydown，一样在这里走四档分级。本文件仍然一行不用改。
  */
 (function (global) {
   'use strict';

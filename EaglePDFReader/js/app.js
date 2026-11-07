@@ -149,11 +149,46 @@
     sync('环境检查绑定', () => bindOnboard());
     sync('色板', () => renderSwatches());
     sync('空态占位', () => { renderOutline(null); renderThumbs(); });
+    /* v4.4.8：不等 Bridge.ready() 的异步等待。用户实测「打开插件立刻按 ESC
+       没反应」，那时焦点还在 Eagle 主窗口、宿主菜单快捷键又已被我们屏蔽，
+       ESC 谁都不处理。这里第一时间把宿主 ESC 转发桥挂上：即便焦点没进
+       guest，主窗口捕获到 ESC 也会转给插件走完整的落盘 + 退出流程。 */
+    sync('宿主 ESC 转发桥', () => { try { Bridge.installHostEscBridge(true); } catch (e) { /* ignore */ } });
 
     /* ---------- 第二段：异步，连接 Eagle ---------- */
     (async () => {
       await step('初始化桥接', () => Bridge.initHooks());
       await step('连接 Eagle', () => Bridge.ready());
+      /* v4.4.8：接管键盘焦点 —— 「必须点一下界面才能用 ESC」的根因。
+         ① 此时 Eagle 的 dom-ready 注入已完成，window.windowID 可用，用精确
+            id 把转发桥重挂一次（boot 同步段那次可能靠 URL 兜底匹配）；
+         ② 分 5 次请宿主把焦点交给承载本插件的 <webview>：webview 刚创建、
+            主窗口随后又拿回焦点、PDF 首次渲染完再抢一次，这几个时机都要
+            覆盖。每次都把 host 侧返回值与 guest 的 hasFocus 写进 debug.log，
+            现场一眼能看出焦点到底有没有进来。 */
+      await step('接管键盘焦点', () => {
+        try { Bridge.installHostEscBridge(true); } catch (e) { /* ignore */ }
+        [0, 150, 450, 1000, 2000].forEach((ms, i) => {
+          setTimeout(() => {
+            try {
+              const p = Bridge.focusGuest(i === 0 ? 'focus.host' : 'focus.host.retry');
+              if (p && typeof p.then === 'function') {
+                p.then((res) => {
+                  try {
+                    if (typeof Dbg !== 'undefined') {
+                      Dbg.log('focus.self', {
+                        attempt: i,
+                        hasFocus: document.hasFocus ? document.hasFocus() : null,
+                        result: res
+                      });
+                    }
+                  } catch (e) { /* ignore */ }
+                });
+              }
+            } catch (e) { /* ignore */ }
+          }, ms);
+        });
+      });
       /* v4.4.6：插件打开期间独占快捷键。
          ① 先无条件恢复一次 —— 自愈上次异常退出 / 在插件界面直接退出 Eagle
             时来不及恢复的残留，也满足「重启 Eagle 后再恢复」；
@@ -747,10 +782,13 @@
     const onUnloadPersist = () => {
       persist(true);
       try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
+      /* v4.4.8：宿主 ESC 转发桥随插件一起下线，不在 Eagle 主窗口留残留 */
+      try { Bridge.installHostEscBridge(false); } catch (e) { /* ignore */ }
     };
     window.addEventListener('beforeunload', onUnloadPersist);
     window.addEventListener('pagehide', () => {
       try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
+      try { Bridge.installHostEscBridge(false); } catch (e) { /* ignore */ }
     });
     detachUnloadPersist = () => {
       try { window.removeEventListener('beforeunload', onUnloadPersist); } catch (e) { /* ignore */ }
@@ -6783,6 +6821,17 @@
          用户看到的就是「按 ESC 把 Eagle 也退了」。现在内联兜底已删，
          这行仍然保留：它同时是「ESC 被我们接管」的唯一标记。 */
       window.__escHandledAt = Date.now();
+      /* v4.4.8：现场判焦点。host = 宿主 ESC 转发桥转来的合成按键，
+         real = 焦点已在 guest 的真实按键；两者都走下面同一套分级逻辑。
+         放在认领时间戳之后，保持「认领在任何 early return 之前」的契约。 */
+      try {
+        if (typeof Dbg !== 'undefined') {
+          Dbg.log('esc.key', {
+            src: e.isTrusted === false ? 'host' : 'real',
+            hasFocus: document.hasFocus ? document.hasFocus() : null
+          });
+        }
+      } catch (err) { /* ignore */ }
       /* 中文输入法选词时按下的 ESC 是「取消候选」，不是「往回收一层」—— 让给输入法 */
       if (e.isComposing || e.keyCode === 229) return;
 
