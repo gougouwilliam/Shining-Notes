@@ -153,7 +153,11 @@
        没反应」，那时焦点还在 Eagle 主窗口、宿主菜单快捷键又已被我们屏蔽，
        ESC 谁都不处理。这里第一时间把宿主 ESC 转发桥挂上：即便焦点没进
        guest，主窗口捕获到 ESC 也会转给插件走完整的落盘 + 退出流程。 */
-    sync('宿主 ESC 转发桥', () => { try { Bridge.installHostEscBridge(true); } catch (e) { /* ignore */ } });
+    sync('宿主 ESC 转发桥', () => {
+      /* 幂等：bridge.js 脚本加载时若 require/ipcRenderer 还没就绪，这里补挂一次 */
+      try { Bridge.initHostEscReceiver(); } catch (e) { /* ignore */ }
+      try { Bridge.installHostEscBridge(true); } catch (e) { /* ignore */ }
+    });
 
     /* ---------- 第二段：异步，连接 Eagle ---------- */
     (async () => {

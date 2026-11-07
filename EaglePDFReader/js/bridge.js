@@ -1143,7 +1143,6 @@ const Bridge = (function () {
       const el = require('electron') || {};
       const ipc = el.ipcRenderer;
       if (!ipc || typeof ipc.on !== 'function') return false;
-      hostEscHooked = true;
       ipc.on(HOST_ESC_CHANNEL, () => {
         try {
           if (typeof Dbg !== 'undefined') {
@@ -1159,6 +1158,9 @@ const Bridge = (function () {
           try { if (window.App && typeof window.App.exit === 'function') window.App.exit(); } catch (e2) { /* ignore */ }
         }
       });
+      /* 只有真的注册上才置位；早期 require/ipcRenderer 还没就绪时，
+         app.js 的 boot 会再调一次补挂。 */
+      hostEscHooked = true;
       return true;
     } catch (e) { return false; }
   }

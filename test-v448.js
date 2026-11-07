@@ -196,6 +196,9 @@ console.log('—— ⑤ guest 接收器：合成 ESC 仍走插件原有分级与
 {
   const env = loadBridge();
   ok(!!env.handlers['eaglenote:esc'], '脚本加载即注册 eaglenote:esc 接收器（不等 boot）');
+  ok(BR.indexOf('ipc.on(HOST_ESC_CHANNEL') > 0 &&
+     BR.indexOf('ipc.on(HOST_ESC_CHANNEL') < BR.indexOf('hostEscHooked = true;'),
+    '★ 只有真的注册上才置位，早期 require 未就绪时允许重试');
   env.handlers['eaglenote:esc']();
   ok(env.dispatched.length === 1 && env.dispatched[0].key === 'Escape' &&
      env.dispatched[0].cancelable === true,
@@ -215,6 +218,8 @@ console.log('—— ⑥ app.js 接线时机 ——');
   const readyAt = APP.indexOf("step('连接 Eagle'");
   ok(bootSync > 0 && bootSync < readyAt,
     '★ 桥在 boot 同步段就挂上，不等 Bridge.ready() 的异步等待');
+  ok(/sync\('宿主 ESC 转发桥'[\s\S]{0,320}?initHostEscReceiver\(\)/.test(APP),
+    'boot 同步段幂等补挂接收器（覆盖早期注册失败）');
   const focusAt = APP.indexOf("step('接管键盘焦点'");
   ok(focusAt > readyAt && focusAt < APP.indexOf("step('快捷键隔离'"),
     'ready 之后用精确 windowID 重挂桥并接管焦点，早于快捷键隔离');

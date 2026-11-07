@@ -136,8 +136,8 @@
 
 | | 功能 | 实现位置 | 测试命中 |
 | --- | --- | --- | --- |
-| ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 102 处 |
-| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 102 处 |
+| ✅ | ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一） | `js/esc.js` `js/escguard.js` | 104 处 |
+| ✅ | ESC 一律吞掉，不漏给 Eagle | `js/app.js` | 104 处 |
 | ✅ | v4.4.7 退出走宿主 Exit 消息，零窗口 API（绝不销毁 Eagle 主窗口） | `js/bridge.js` `js/app.js` | 24 处 |
 | ✅ | 关不掉时常驻横幅 + 再试/最小化 | `js/app.js` `css/app.css` | 1 处 |
 | 🟡 | ESC 空栈走 exitPlugin() 关闭插件（escExitHint 已退役） | `js/app.js` | — |
