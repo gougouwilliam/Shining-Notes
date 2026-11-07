@@ -52,6 +52,20 @@
  * 因为 destroy 比 close 强硬，新增第三级许可 allowSenderClose，
  * 证据要求比 allowWindowClose 更严（见 closeVerdict 里的注释）。
  *
+ * v4.4.5 复盘：close 也不是答案，只有 destroy 是
+ * ────────────────────────────────────────────
+ * 现场 08:32 / 08:33 日志：IPC close 已发出（sent:true），窗口却没关，
+ * 同一个 windowID 被连按十几次；而 exit.senderdestroy / exit.stillalive
+ * 一行都没有。两件事同时发生：
+ *   ① 主进程 bw.close() 与 renderer 的 window.close() **并发**，互相打断 ——
+ *      结果在「宿主一起收走」和「卡住没反应」之间摇摆；
+ *   ② window.close() 一发出，Chromium 就把 window.closed 提前置为 true，
+ *      exitPlugin 里所有 if (!alive()) 兜底全被短路，硬兜底根本没机会发。
+ * 结论：预览窗口只发一条 closeCurrent('destroy')。destroy 不触发 'close'
+ * 事件、不跑 beforeunload、不受 sticky activation 影响，且 sender 定位保证
+ * 只作用于自己。allowWindowClose 仍作为「当前窗口可关闭」的形态证据保留，
+ * 但不再真的调用 window.close()。
+ *
  * 浏览器里挂 window.WinGuard，Node 里 module.exports（测试直接 require）。
  */
 (function (global) {

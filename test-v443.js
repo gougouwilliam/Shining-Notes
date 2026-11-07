@@ -127,11 +127,11 @@ console.log('—— ⑦ exitPlugin：预览分支走 sender 定向关窗，不�
   const end = APP.indexOf('exiting = false;\n      return;', k);
   ok(i > 0 && j > i && k > j && end > k && denyAt > end, '能定位到新分支与旧拒绝分支（新分支在前）');
   const seg = APP.slice(k, end);
-  ok(/window\.close\(\)/.test(seg), 'window.close() 仍作 renderer 兜底');
+  ok(!/window\.close\(\);/.test(seg), 'v4.4.5 起预览分支不再调用 window.close()（并发干扰源）');
   ok(!/Bridge\.(closeSelf|destroySelf)\(/.test(seg) && !/\.destroy\(\)/.test(seg),
     '不直接调 remote 的 closeSelf / destroySelf（v4.4.4 改走 sender 定向通道）');
-  ok(/Bridge\.closeCurrent\('close'\)/.test(seg) && /Bridge\.closeCurrent\('destroy'\)/.test(seg),
-    '主路径是主进程按 sender 定向的 close，320ms 兜底 destroy');
+  ok(/Bridge\.closeCurrent\('destroy'\)/.test(seg) && !/Bridge\.closeCurrent\('close'\)/.test(seg),
+    'v4.4.5 单一出口：只发 sender destroy，不再并发 IPC close');
   ok(/Bridge\.focusParent\(\{ focus: false \}\)/.test(seg), '只 restore/show 宿主，不抢焦点');
   ok(/\[120, 420\]\.forEach/.test(seg), '120/420ms 两次补恢复');
   ok(/窗口未关闭，请按空格或点 Eagle 的返回退出预览/.test(seg), '脚本关窗被拒时有可执行兜底提示');

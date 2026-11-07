@@ -790,16 +790,25 @@ const Bridge = (function () {
 
      v3.27 之前一直以为是按键没送到、或者 ESC 栈还有残留层 —— 都不是。
      真正的出口在这里。 */
-  function ipcWindow(method) {
+  function ipcWindow(method, tag) {
     try {
       if (typeof require !== 'function') return false;
       const el = require('electron') || {};
       const ipc = el.ipcRenderer;
       if (!ipc || typeof ipc.invoke !== 'function') return false;
       const pending = ipc.invoke('plugin.window.', { method: method, value: undefined });
-      /* v4.4.4：invoke 返回 Promise，主进程拒绝 / 窗口已销毁时会 reject。
-         不吞掉就是一条 UnhandledPromiseRejection，关窗这种高压路径不能再添噪声。 */
-      if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+      /* v4.4.5：带 tag 时把 IPC 的**真实结果**落盘。v4.4.4 用 .catch(()=>{})
+         把失败全吞了，日志只剩 "sent:true"，分不清是消息没送达、主进程
+         handler 抛错，还是窗口其实已经销毁；不带 tag 的调用（探测等）保持静默。 */
+      if (pending && typeof pending.then === 'function') {
+        pending.then((r) => {
+          if (!tag) return;
+          try { if (typeof Dbg !== 'undefined') Dbg.log(tag + '.ok', { method: method, result: r === undefined ? null : r }); } catch (e) { /* ignore */ }
+        }).catch((err) => {
+          if (!tag) return;
+          try { if (typeof Dbg !== 'undefined') Dbg.log(tag + '.err', { method: method, error: String((err && err.message) || err) }); } catch (e) { /* ignore */ }
+        });
+      }
       return true;
     } catch (e) { return false; }
   }
@@ -972,7 +981,7 @@ const Bridge = (function () {
       try { if (typeof Dbg !== 'undefined') Dbg.log('exit.senderclose.deny', v.code); } catch (e) { /* ignore */ }
       return false;
     }
-    return ipcWindow(method === 'destroy' ? 'destroy' : 'close');
+    return ipcWindow(method === 'destroy' ? 'destroy' : 'close', 'exit.ipc');
   }
 
   /* 把 dataURL 图片写入系统剪贴板（Electron 的 clipboard 比 navigator.clipboard 可靠） */

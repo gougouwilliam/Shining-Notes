@@ -4,7 +4,20 @@
 3.3.0 起，摘录的高亮会**同步写进 PDF 文件本身**（换了阅读器也还在），顶栏是**常驻的全文搜索框**，并新增**视频笔记**。
 零外部依赖，全部资源（PDF.js、pdf-lib、CJK 字符映射、标准字体）随插件本地打包，**除划词翻译外不联网**。
 
-当前版本 **4.4.4**。
+当前版本 **4.4.5**。
+
+---
+
+## 更新记录 · 4.4.5（预览窗口 ESC 只发一条 destroy）
+
+- **用户实测回归**：v4.4.4 装好后「不操作还能退；操作了要么连 Eagle 一起退出、要么没反应」。`debug.log` 08:32/08:33 给出决定性证据：`exit.senderclose {"sent":true}` 说明 IPC close 已发出，但同一个 `windowID=9` 被连按十几次窗口都没关，且 **`exit.senderdestroy` 与 `exit.stillalive` 一行都没有**。
+- **根因（v4.4.4 的设计缺陷，不是浏览器拦截）**：预览分支同时发了主进程 `bw.close()` 和 renderer 的 `window.close()`，两条关闭请求并发、互相打断，结果在「宿主一起收走」和「卡住没反应」之间摇摆；更致命的是 `window.close()` 一发出，Chromium 就把 `window.closed` 提前置为 `true`，`exitPlugin()` 里所有 `if (!alive()) return` 兜底全被短路 —— 320ms 的 `destroy` 和 900ms 的提示根本没机会执行，所以日志里看不到任何失败记录。
+- **翻 `app.asar` 确认的依据**：`ipcMain.handle('plugin.window.')` 是 `BrowserWindow.fromWebContents(event.sender)`，只作用于发消息的预览窗口；`openPreview` 创建的窗口没有 `close` 事件拦截。Eagle 主窗口另监听 `message === "Exit"` → `leaveDetailMode()`，菜单里 ESC 加速器会调 `escHandler`；但 v3.31 曾试过放行 ESC 让宿主兜，结果「Eagle 把整个界面收走」，所以 **不能交还宿主**。
+- **修复① 单一出口**（`app.js`）：预览分支只发 `Bridge.closeCurrent('destroy')`，320ms 后若本 JS 仍在执行再补一次防 IPC 丢包。`destroy()` 不触发 `'close'` 事件、不跑 `beforeunload`、不受 sticky activation 影响，因此既不触发宿主收起界面的回调，也不会卡在关闭拦截里。**不再发 `window.close()`、不再发 IPC `close`**。
+- **修复② 兜底不再被骗**：预览分支删掉所有 `if (!alive()) return` —— timer 能执行本身就说明窗口还在（真关掉了 renderer 上下文就没了，timer 根本不会跑），不需要 `window.closed`。
+- **修复③ IPC 结果落盘**（`bridge.js`）：`ipcWindow(method, tag)` 支持可选 tag，`closeCurrent` 带 `exit.ipc`，成功写 `exit.ipc.ok`、失败写 `exit.ipc.err`。v4.4.4 的 `.catch(()=>{})` 把失败全吞了，日志只剩 `sent:true`，分不清是消息没送达、handler 抛错还是窗口已销毁。
+- 保留不变：三级许可（现场 `no-self-id` → `allow:false / allowWindowClose:true / allowSenderClose:true`）、ESC 无条件吞掉（绝不交还宿主）、浮层/搜索/输入优先级、退出前落盘并摘 `beforeunload`、120/420ms 宿主 restore/show、1.2s 连按防抖。独立窗口形态（从闪灵面板打开）仍走原来的 `closeSelf` + `destroySelf` 路径。
+- **待实测**：重启 Eagle 后打开文档，点过页面再按 ESC。理想日志是 `exit.destroy {sent:true}` + `exit.ipc.ok {method:"destroy"}`，随后窗口直接关闭、不再有 `exit.stillalive`；若仍提示，看 `exit.ipc.err`。
 
 ---
 

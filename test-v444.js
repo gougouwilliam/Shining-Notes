@@ -108,10 +108,11 @@ console.log('—— ④ Bridge：按 sender 定向关窗通道 ——');
 {
   ok(/function closeCurrent\(method\) \{/.test(BR), '新增 closeCurrent(method)');
   ok(/if \(!v\.allow && !v\.allowSenderClose\) \{/.test(BR), '双闸门：allow 或 allowSenderClose 至少其一');
-  ok(/return ipcWindow\(method === 'destroy' \? 'destroy' : 'close'\);/.test(BR),
-    '只转发 close / destroy 两个方法，交给主进程 sender 定位');
+  ok(/return ipcWindow\(method === 'destroy' \? 'destroy' : 'close', 'exit\.ipc'\);/.test(BR),
+    '只转发 close / destroy 两个方法，交给主进程 sender 定位（带结果日志 tag）');
   ok(/fromWebContents\(event\.sender\)/.test(BR), '注释写明主进程按 sender 定位，不跨窗口');
-  ok(/pending\.catch\(\(\) => \{\}\)/.test(BR), 'invoke 的 Promise reject 被吞掉，不制造 UnhandledRejection');
+  ok(/tag \+ '\.err'/.test(BR) && /tag \+ '\.ok'/.test(BR),
+    'v4.4.5：IPC 的 ok / err 都写进 debug.log，不再静默吞掉失败');
   ok(/^\s+closeCurrent,$/m.test(BR), 'closeCurrent 已导出给 app.js');
   ok(/exit\.senderclose\.deny/.test(BR), '被拒时写 debug.log，下轮好定位');
 }
@@ -139,14 +140,15 @@ console.log('—— ⑥ app.js：预览分支的关窗序列 ——');
   ok(i > 0 && k > i && end > k, '能定位到预览分支');
   const seg = APP.slice(k, end);
   ok(/now - exitSentAt < 1200/.test(seg), '连按 ESC 1.2s 防抖，不重复发 IPC');
-  ok(/Bridge\.closeCurrent\('close'\)/.test(seg), '主路径：主进程 sender 定向 close');
-  ok(/window\.close\(\)/.test(seg), 'renderer 的 window.close 降级为兜底');
+  ok(/Bridge\.closeCurrent\('destroy'\)/.test(seg) && !/Bridge\.closeCurrent\('close'\)/.test(seg),
+    'v4.4.5 单一出口：只发 sender destroy');
+  ok(!/window\.close\(\);/.test(seg), 'v4.4.5 起不再调用 window.close()（会把 window.closed 提前置真）');
   ok(/Bridge\.closeCurrent\('destroy'\)/.test(seg), '320ms 仍活 → destroy 硬销毁');
   ok(/}, 320\);/.test(seg) && /}, 900\);/.test(seg), '硬兜底 320ms、提示 900ms');
   ok(/\[120, 420\]\.forEach/.test(seg), '保留两次宿主 restore/show（不抢焦点）');
   ok(!/Bridge\.(closeSelf|destroySelf)\(/.test(seg) && !/\.destroy\(\)/.test(seg),
     '不直接调 remote 关窗 API（那条路可能指回主窗口）');
-  ok(/dbg\('exit\.senderclose'/.test(seg) && /dbg\('exit\.senderdestroy'/.test(seg) &&
+  ok(/dbg\('exit\.destroy'/.test(seg) && /dbg\('exit\.destroy\.retry'/.test(seg) &&
      /dbg\('exit\.stillalive'/.test(seg), '三级诊断日志齐全');
   ok(/窗口未关闭，请按空格或点 Eagle 的返回退出预览/.test(seg), '极端情况仍给可执行提示');
 }
@@ -156,8 +158,8 @@ ok(/sticky activation/.test(WG_SRC) && /beforeunload/.test(WG_SRC),
   'winguard 注释说明 beforeunload + 点击的 Chromium 规则');
 ok(/allowSenderClose/.test(WG_SRC) && /separateWindow/.test(WG_SRC),
   'winguard 注释说明第三级许可与证据要求');
-ok(/sticky activation/.test(read('EaglePDFReader/js/escguard.js')),
-  'escguard 注释同步更正：ESC 分级没错，错在关窗通道');
+ok(/v4\.4\.5/.test(read('EaglePDFReader/js/escguard.js')),
+  'escguard 注释同步更正：ESC 分级没错，关窗只发 destroy、不交还宿主');
 
 console.log('—— ⑧ ESC 策略不变 ——');
 ok(EG.escapeAction({ depth: 1 }) === 'pop-layer', '有浮层仍只收浮层');

@@ -36,9 +36,9 @@
  * ────────────────────────────────────────────
  * 预览是独立 BrowserWindow（windowID≠parentID），不是主窗口里的 webview。
  * 这里的 escapeAction 保持 exit-plugin 不变；关窗可靠性全在 exitPlugin：
- * 先摘 beforeunload，再走主进程按 sender 定向的 close/destroy。
- * 之前「点过页面后 ESC 失效」是 window.close() 被 Chromium 的
- * beforeunload + sticky activation 拦住，不是这里的分级判错。 */
+ * v4.4.5 起只发一条主进程按 sender 定向的 destroy —— 不并发 close、
+ * 不调用 window.close()、不把 ESC 交还宿主（v3.31 试过放行，Eagle 会把
+ * 整个界面收走）。之前「点过页面后 ESC 失效」不是这里的分级判错。 */
   function escapeAction(env) {
     env = env || {};
     if (env.depth > 0) return 'pop-layer';
