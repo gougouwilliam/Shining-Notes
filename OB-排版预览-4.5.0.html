@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>闪灵笔记 · OB 排版预览 v4.5.0</title>
+<style>
+  :root{--bg:#ffffff;--ink:#22242a;--sub:#6b7280;--line:#e5e7eb;--soft:#f7f8fa;--accent:#6c5ce7;--blue:#3b7ddd;--green:#2f9e6f;--amber:#b7791f;}
+  *{box-sizing:border-box}
+  body{margin:0;background:#eef0f4;color:var(--ink);font:15px/1.72 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:920px;margin:0 auto;padding:28px 18px 60px;}
+  .top{background:linear-gradient(120deg,#6c5ce7,#8b7bf0);color:#fff;border-radius:14px;padding:20px 24px;box-shadow:0 8px 24px rgba(108,92,231,.18);}
+  .top h1{margin:0 0 6px;font-size:21px;letter-spacing:.3px;}
+  .top p{margin:0;opacity:.9;font-size:13px;}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0 20px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:11px;padding:13px 15px;}
+  .card b{display:block;color:var(--accent);font-size:13px;margin-bottom:5px;}
+  .card span{font-size:12px;color:var(--sub);line-height:1.6;display:block;}
+  .paper{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:30px 36px 40px;box-shadow:0 4px 18px rgba(20,24,40,.06);}
+  .fm{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:9px 13px;font:12px/1.65 ui-monospace,Consolas,monospace;color:#7a7f8a;white-space:pre-wrap;margin-bottom:22px;}
+  h1.doc{font-size:26px;margin:0 0 16px;line-height:1.4;}
+  h2.sec{font-size:19px;margin:0 0 14px;padding-bottom:7px;border-bottom:1px solid var(--line);}
+  h3.unit{font-size:15.5px;margin:22px 0 10px;font-weight:650;}
+  h4.note{font-size:14px;margin:0 0 8px;color:#454a55;font-weight:600;}
+  hr{border:0;border-top:1px solid var(--line);margin:24px 0;}
+  .blk{display:inline-block;font:11px/1.4 ui-monospace,Consolas,monospace;color:#8b8496;background:#f3f1f8;border:1px solid #e7e2f3;border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:2px;}
+  .tag{display:inline-block;font-size:11px;border-radius:5px;padding:1px 7px;margin-left:8px;vertical-align:2px;font-weight:500;}
+  .tag.new{background:#eaf6ef;color:var(--green);border:1px solid #cfe9da;}
+  .tag.fix{background:#eef0ff;color:var(--accent);border:1px solid #ddd9fb;}
+  .callout{border-left:3px solid var(--blue);background:#f5f8fd;border-radius:0 8px 8px 0;padding:9px 14px;margin:10px 0 14px;}
+  .callout.info{border-color:var(--accent);background:#f7f5ff;}
+  .callout.tip{border-color:var(--amber);background:#fffaf0;}
+  .callout .ct{font-size:12.5px;font-weight:650;color:#3c4658;cursor:pointer;}
+  .callout .ct::before{content:"▾ ";color:var(--sub);}
+  .callout .cb{font-size:13px;color:#4b5260;margin-top:5px;}
+  .callout .cb div{margin:2px 0;}
+  .quote{font-size:13px;color:#4a505c;}
+  .img{background:repeating-linear-gradient(45deg,#fafbfc,#fafbfc 8px,#f2f4f7 8px,#f2f4f7 16px);border:1px dashed #d8dce3;border-radius:8px;height:74px;display:flex;align-items:center;justify-content:center;color:#9aa1ad;font-size:12px;margin:10px 0 14px;}
+  .img span{background:#fff;border:1px solid #e2e5ea;border-radius:5px;padding:3px 9px;}
+  .wikilink{color:var(--accent);background:#f2efff;border-bottom:1px solid #d9d1ff;border-radius:3px;padding:0 3px;text-decoration:none;cursor:pointer;font-size:13.5px;}
+  .esc{color:#7d8492;}
+  .unitbox{border:1px solid var(--line);border-radius:9px;padding:4px 16px 2px;margin:12px 0 18px;background:#fdfdfe;}
+  .pill{font:11px ui-monospace,Consolas,monospace;color:#9aa1ad;background:var(--soft);border:1px solid var(--line);border-radius:4px;padding:1px 5px;}
+  .note-card{margin-top:22px;background:#fffdf5;border:1px solid #f0e6c8;border-radius:10px;padding:13px 16px;font-size:12.5px;color:#6e6449;line-height:1.8;}
+  .note-card b{color:#8a6d1f;}
+  ul{margin:6px 0 12px;padding-left:20px;}
+  li{margin:2px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>闪灵笔记 · Obsidian 排版预览 <span style="font-weight:400;opacity:.85">v4.5.0</span></h1>
+    <p>下面是用插件真实 build() 生成的 md 渲染出来的阅读视图示意 · 同一份纯文本见 OB-排版预览-4.5.0.md</p>
+  </div>
+
+  <div class="cards">
+    <div class="card"><b>① 绝对同步</b><span>插件增删改 0.7s 落盘；OB 手改 3s 回流且绝不重写正在编辑的文件；frontmatter 带 synced 时间。</span></div>
+    <div class="card"><b>② 精确双链</b><span>每条摘录 / 笔记挂稳定块 ID，链接写 [[书#^ID|别名]]，OB 直接滚到那一条，而不是打开整篇 md。</span></div>
+    <div class="card"><b>③ 排版</b><span>折叠说明、编号标题、批注 / 原文 callout、图片限宽、正文标题不污染大纲。</span></div>
+  </div>
+
+  <div class="paper">
+    <div class="fm">eagle: "MVTKVTJR3HO7Z" · title: "卒中防治・即刻行动｜ANGEL-TNK 亚组研究" · kind: "pdf"
+tags: ["公众号", "神经介入在线"] · updated / <b style="color:#6c5ce7">synced: 2026-11-07T15:56:48+08:00</b> · rev: 1
+excerpts: 3 · notes: 2 · generator: "闪灵笔记 4.5.0"</div>
+
+    <h1 class="doc">卒中防治・即刻行动｜ANGEL-TNK 亚组研究</h1>
+
+    <div class="callout info">
+      <div class="ct">关于这篇笔记 · 闪灵笔记 4.5.0 <span class="tag new">折叠，默认只占一行</span></div>
+      <div class="cb">
+        <div><b>结构以插件为准</b>：摘录 / 笔记的增、删、改会自动同步到这里，请勿手动增删这些区块。</div>
+        <div><b>文字可以直接改</b>：正文、批注、下方 Eagle 注释区保存后插件会读回。</div>
+        <div>原文引用、页码、时间点、图片由插件维护；文件末尾的「手记」区完全由你支配。</div>
+      </div>
+    </div>
+
+    <hr>
+    <h2 class="sec">摘录 · 3 条 <span class="tag new">区块计数</span></h2>
+
+    <div class="unitbox">
+      <h3 class="unit">① p.2 · 高亮 · 黄 <span class="blk">^eaglenote-ex-anmw3n46yb49p3l</span><span class="tag fix">可被精确引用</span></h3>
+      <div class="callout"><div class="ct">原文 · 高亮 · 黄</div><div class="cb quote">在 253 名入组患者中，EVT 再通后 eTICI 评分分层不同，联合动脉内溶栓的获益也不同。</div></div>
+      <div class="callout"><div class="ct">批注 <span class="tag new">callout</span></div><div class="cb"><div>样本量与分层口径要记一下</div><div class="esc">## 这是批注里的小标题（伪标题，不进大纲）</div></div></div>
+    </div>
+
+    <div class="unitbox">
+      <h3 class="unit">② p.3 · 框选 · 绿 <span class="blk">^eaglenote-ex-anmw3n57rrdcmrr</span></h3>
+      <div class="img"><span>![框选 · 绿|420](assets/…png)　·　宽度受限，不再占满整屏</span></div>
+      <div class="callout"><div class="ct">批注</div><div class="cb"><div>eTICI 2b 50-67 这一组获益最明显</div></div></div>
+    </div>
+
+    <div class="unitbox">
+      <h3 class="unit">③ p.4 · 批注 <span class="blk">^eaglenote-ex-anmw3n5mv2mitlt</span></h3>
+      <div class="callout"><div class="ct">批注</div><div class="cb"><div>这里补一条纯文字锚点笔记</div></div></div>
+    </div>
+
+    <hr>
+    <h2 class="sec">笔记 · 2 条</h2>
+
+    <div class="unitbox">
+      <h3 class="unit">① 独立笔记 <span class="blk">^eaglenote-nt-ntmw3n7313m0jmc</span></h3>
+      <h4 class="note">**AI 总结** <span class="pill">旧 [[书#标题]] 锚点保留</span></h4>
+      <p style="margin:6px 0;font-weight:650" class="esc"># 一句话总结</p>
+      <p style="margin:6px 0">ANGEL-TNK 亚组研究为精准筛选反桥接获益人群提供了循证证据。</p>
+      <p style="margin:6px 0;font-weight:650" class="esc">## 核心要点</p>
+      <ul><li>2b 50-67 组联合 TNK 更能获得完美预后</li><li>2c-3 组未显著获益，且颅内出血风险增加</li><li>两组症状性颅内出血与死亡风险均未增加</li></ul>
+      <div style="font-size:12px;color:#8a8f9b">上面两行写成 <span class="pill">\# 一句话总结</span> / <span class="pill">\## 核心要点</span>，OB 显示为普通文本，<b>不再混进大纲</b>；回读时无损还原。</div>
+    </div>
+
+    <div class="unitbox">
+      <h3 class="unit">② 独立笔记 <span class="blk">^eaglenote-nt-ntmw535odz39rvh</span></h3>
+      <h4 class="note">双链笔记</h4>
+      <p style="margin:6px 0"><a class="wikilink" href="javascript:void(0)">测试一下框选下的笔记功能</a> <span style="font-size:11.5px;color:#9aa1ad">← OB 里直接滚到那一条摘录批注；插件里点它会翻回标题再定位</span></p>
+      <p style="margin:6px 0">旧版链接也照样能点：<a class="wikilink" href="javascript:void(0)">测试一下引用功能</a></p>
+    </div>
+
+    <hr>
+    <h2 class="sec">附 · Eagle 注释（双向同步）</h2>
+    <div class="callout tip"><div class="ct">这一节会写回 Eagle 注释栏；在 Eagle 里改也会投影到这里。</div></div>
+    <p style="color:#9aa1ad;font-size:13px">此区块与 Eagle 注释栏双向同步，在这里或 Eagle 里写都行。</p>
+
+    <div class="note-card">
+      <b>兼容性</b>：回读层同时认 v4.4 旧格式（<span class="pill">**笔记**</span> / <span class="pill">### head</span> + <span class="pill">#### 标题</span>）与 v4.5 新格式；磁盘上存量 md 首次启动时迁移，手改内容一字不丢。文件末尾的「手记」区仍完全由你支配，插件绝不覆盖。
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
