@@ -47,8 +47,8 @@ ok(/wikiPick[\s\S]{0,500}s0 \+ ins\.length/.test(E), '插入后光标落在替�
 console.log('== 6. 笔记链接可点开 ==');
 ok(/pv\.addEventListener\('mousedown'[\s\S]{0,200}closest\('a'\)/.test(E),
   '预览层 mousedown 放行链接（v4.2.9 扩为所有 <a>，click 委托收得到）');
-ok(/if \(split\.note && state\.item && currentBookTitle\(\) === split\.book\)/.test(A),
-  '当前书的笔记链接直达定位，不重开文档');
+ok(/if \(noteTarget && state\.item && currentBookTitle\(\) === split\.book\)/.test(A),
+  '当前书的笔记链接直达定位，不重开文档（v4.5.0 块锚点先翻标题）');
 ok(A.indexOf("openWikiTarget(a.getAttribute('data-wtarget'))") > 0, 'document 级委托入口在位');
 
 console.log('== 7. 附件徽标 / 新建按钮 ==');

@@ -788,12 +788,16 @@
        切走条目，甚至从插件界面直接退出 Eagle，这条兜底保证不留残留。 */
     const onUnloadPersist = () => {
       persist(true);
+      /* v4.5.0：把打字防抖里还没发出去的那次投影立刻落盘，别等 0.7s ——
+         页面卸载后定时器就没了，那次改动会等到下次打开才对账。 */
+      try { if (typeof Projection !== 'undefined') Projection.flush(); } catch (e) { /* ignore */ }
       try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
       /* v4.4.8：宿主 ESC 转发桥随插件一起下线，不在 Eagle 主窗口留残留 */
       try { Bridge.installHostEscBridge(false); } catch (e) { /* ignore */ }
     };
     window.addEventListener('beforeunload', onUnloadPersist);
     window.addEventListener('pagehide', () => {
+      try { if (typeof Projection !== 'undefined') Projection.flush(); } catch (e) { /* ignore */ }
       try { Bridge.setHostShortcuts(false); } catch (e) { /* ignore */ }
       try { Bridge.installHostEscBridge(false); } catch (e) { /* ignore */ }
     });
@@ -4673,11 +4677,23 @@
     if (!t) return false;
     /* v4.2：目标可带笔记级部分（[[书#笔记]]）。书负责打开，笔记负责定位。 */
     const split = (typeof WikiLink !== 'undefined' && WikiLink.splitTarget)
-      ? WikiLink.splitTarget(t) : { book: t, note: '' };
+      ? WikiLink.splitTarget(t) : { book: t, note: '', anchor: '' };
+    /* v4.5.0：「书#^块ID」是 OB 原生块引用（链接目标稳定，改标题不断链）。
+       插件里点它时先把块 ID 翻回可读笔记标题，再走原来的定位链路；
+       没标题的摘录批注只打开书，不误报「没有这条笔记」。 */
+    let noteTarget = split.note || '';
+    if (split.anchor) {
+      let info = null;
+      try {
+        info = (typeof Projection !== 'undefined' && Projection.titleByAnchor)
+          ? Projection.titleByAnchor(split.anchor) : null;
+      } catch (e) { info = null; }
+      noteTarget = (info && info.title) || '';
+    }
     /* v4.2.8：目标就是当前书的笔记 → 直接定位到那条笔记（切笔记页+滚动高亮），
        不再把整本书重开一遍 —— 之前点本书的笔记链接会触发整个文档重载，又慢又晃。 */
-    if (split.note && state.item && currentBookTitle() === split.book) {
-      if (locateNoteByTitle(split.note)) return true;
+    if (noteTarget && state.item && currentBookTitle() === split.book) {
+      if (locateNoteByTitle(noteTarget)) return true;
     }
     /* ① manifest 对账：书名 → 条目 id → Eagle 拿全量条目 → 插件内打开。
        走 manifest 而不是直接搜资料库，是因为书名归一化对账在改名后仍成立。 */
@@ -4686,7 +4702,7 @@
       try {
         const fresh = await Bridge.getItemById(id);
         if (fresh && await openItem(Object.assign({ id: id, ext: 'pdf' }, fresh))) {
-          if (split.note) locateNoteByTitle(split.note);
+          if (noteTarget) locateNoteByTitle(noteTarget);
           return true;
         }
       } catch (e) { /* 落到搜索兜底 */ }
@@ -4697,7 +4713,7 @@
       const eq = (it) => U.stripExt(it.name || '').trim().toLowerCase() === split.book.toLowerCase();
       const hit = list.find((it) => eq(it) && it.ext === 'pdf') || list.find(eq);
       if (hit && await openItem(hit)) {
-        if (split.note) locateNoteByTitle(split.note);
+        if (noteTarget) locateNoteByTitle(noteTarget);
         return true;
       }
     } catch (e) { /* 落到提示 */ }
@@ -6025,15 +6041,31 @@
         try { U.toast('已从 Obsidian 吸回 ' + edits.length + ' 处修改', '', 2400); } catch (e) { /* ignore */ }
       }
     });
-    /* 空闲期扫描：15s 一轮，只 stat 清单里认领过的文件，代价可忽略。
-       与当前打开哪本文档无关 —— Obsidian 里改哪本都能吸回来。 */
+    const pdbg = (t, v) => {
+      try { if (typeof Dbg !== 'undefined') Dbg.log(t, v); } catch (e) { /* ignore */ }
+    };
+    /* v4.5.0「绝对同步」：回读轮询 15s → 3s。只 stat manifest 里认领过的
+       文件，几百篇也就是几百次 stat，代价可忽略；与当前打开哪本文档无关 ——
+       Obsidian 里改哪本都能在 3 秒内吸回来。回读只吸收、不重写 md
+       （见 Projection.syncExternal），所以不会打断用户正在进行的编辑。 */
     if (startProjSync._timer) clearInterval(startProjSync._timer);
     startProjSync._timer = setInterval(() => {
       try {
         if (typeof Projection === 'undefined' || !Projection.isOn || !Projection.isOn()) return;
-        Projection.syncExternal();
+        const r = Projection.syncExternal();
+        if (r && r.changed) pdbg('proj.absorb', { changed: r.changed, docs: r.docs });
       } catch (e) { /* ignore */ }
-    }, 15000);
+    }, 3000);
+    /* v4.5.0：启动 3s 后做一次全量对账 —— 把插件没运行期间 Eagle / OB 的
+       变化对齐，顺带把存量 md 迁移成带块锚点的新排版。force=false：
+       正文没变的一律不碰文件，升级不会惊动 OB 里的手改。 */
+    if (startProjSync._rebuildKick) clearTimeout(startProjSync._rebuildKick);
+    startProjSync._rebuildKick = setTimeout(() => {
+      try {
+        if (typeof Projection === 'undefined' || !Projection.isOn()) return;
+        pdbg('proj.rebuild', Projection.rebuildAll(false));
+      } catch (e) { /* ignore */ }
+    }, 3000);
     /* v4.4.2：删除对账 —— 启动 8s 后跑一次，之后每 5 分钟一轮。
        全库 item.get 有成本，不塞进 15s 的同步循环；复核 + 备份双保险，
        静默轮自动跳过含手记的 md（交给工作台按钮手动确认）。 */
@@ -6570,6 +6602,8 @@
 
     try { flushDrafts(); } catch (e) { console.warn('[exit] 保存草稿失败', e); }
     try { persist(true); } catch (e) { console.warn('[exit] 保存失败', e); }
+    /* v4.5.0：退出即把待写投影全部落盘，OB 端不留「差一次同步」的尾巴 */
+    try { if (typeof Projection !== 'undefined') Projection.flush(); } catch (e) { /* ignore */ }
     /* v4.4.4：数据已落盘，摘掉自己注册的 beforeunload —— 页面不再挂着卸载
        拦截，600ms 兜底的 window.close() 才不会被 Chromium 挡下。
        只摘我们自己这一条，不影响 Eagle 宿主自己的卸载逻辑。 */

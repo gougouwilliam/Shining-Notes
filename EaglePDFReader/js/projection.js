@@ -48,8 +48,20 @@ const Projection = (function () {
      也不会变成用户看不懂的 .orphan-*.md。 */
   const TOMBFILE = '.eaglenote-deleted.json';
   const BACKUP_DIR = 'deleted-md';
-  const WRITE_DELAY = 2600;                   // 打字停 2.6s 才落盘，别把同步盘写爆
+  /* v4.5.0「绝对同步」：打字防抖从 2.6s 压到 0.7s。JSON 仍是权威、md 只是
+     投影，写一次全文不到几十 KB，0.7s 既不会把同步盘写爆，又让 OB 里
+     「插件一改就看到」而不是等三秒。回读轮询在 app.js 同样压到 3s。 */
+  const WRITE_DELAY = 700;
   const EC_LOCAL_TTL = 15000;                 // 写回 Eagle 注释后，容忍 metadata.json 迟迟不落盘的窗口
+  /* v4.5.0：Obsidian 块锚点前缀。块 ID 只允许 [A-Za-z0-9-]，
+     且必须和笔记文字完全解耦 —— 改笔记第一行 / 在 OB 里改标题 / 两条笔记
+     同名，链接都不失效。旧 [[书#标题]] 仍保留可读副标题以便兼容。 */
+  const BLK = 'eaglenote';
+  /* v4.5.0 同步审计：只记事件与计数，不记任何笔记正文（沿用 dbg.js 纪律）。
+     用户在 debug.log 里看到 proj.write 就等于确认这一轮真的同步到了 OB。
+     调用点全部写成内联 try/catch，不引入本模块内的新函数 —— 历史回归套件
+     会把 writeNow 的分支原样抠进 new Function 沙箱里跑，多一个外部依赖
+     就会 ReferenceError，日志这种旁路功能不值得让测试重新接线。 */
 
   let root = null;               // <hub>/<库名> 绝对路径
   let hub = null;                // <hub> 绝对路径（README 放这）
@@ -479,6 +491,31 @@ const Projection = (function () {
     return raw || ('a' + String(fallback == null ? '0' : fallback));
   }
 
+  /* ---------- v4.5.0 OB 块锚点 / 排版小工具 ---------- */
+  function blkId(kind, aid) {
+    return BLK + '-' + kind + '-' + String(aid || 'x').replace(/[^A-Za-z0-9-]/g, '-');
+  }
+  function blkRef(kind, aid) { return '^' + blkId(kind, aid); }
+  /* 圈数字只用于视觉编号，不进链接目标；超过 20 条退回普通数字 */
+  function circled(n) {
+    const c = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+    return n >= 1 && n <= 20 ? c.charAt(n - 1) : String(n);
+  }
+  /* 笔记正文里用户自己写的 # / ## 标题会把整篇 OB 大纲搅乱（AI 总结最典型）。
+     投影时把行首 # 转义成 \# —— OB 阅读视图仍显示「# 一句话总结」但不进大纲；
+     回读时把行首 \# 还原成 #。这个变换是无损的：用户在 OB 里即使删掉了 \，
+     回读拿到的也恰好是原文，不会多也不会少一个字符。 */
+  function escapeHeadings(s) {
+    return String(s == null ? '' : s).replace(/^(\s*)(#{1,6})(\s+)/gm, '$1\\$2$3');
+  }
+  /* 批注区：> [!note] 折叠式 callout，比原来的 **笔记** 一行更醒目。
+     空行也写成 '> '，保证 OB 认为整段批注仍在同一个 callout 里。 */
+  function noteCallout(text) {
+    return ['> [!note] 批注']
+      .concat(escapeHeadings(String(text || '').trim()).split(/\r?\n/).map((l) => '> ' + l))
+      .join('\n');
+  }
+
   function keyOf(meta, data) {
     if (meta && meta.itemId) return meta.itemId;
     if (data && data.itemId) return data.itemId;
@@ -661,6 +698,9 @@ const Projection = (function () {
     const liveNotes = notes.filter((n) => String(n.md || '').trim() || String(n.quote || '').trim() || n.image);
 
     const images = [];
+    /* v4.5.0 锚点索引：{ k:'ex'|'nt', a:OB块ID, t:笔记标题, n:序号 }。
+       写进 manifest 供 [[ 补全候选使用 —— 链接目标用 a（稳定），显示用 t。 */
+    const anchors = [];
     const id = keyOf(m, d);
     const ecAnchor = anchorId(id, 'ec');
     const ecText = currentEcText(id);
@@ -698,6 +738,9 @@ const Projection = (function () {
     if (m.filePath) L.push('source: ' + yamlStr(m.filePath));
     if (Array.isArray(m.tags) && m.tags.length) L.push('tags: [' + m.tags.map(yamlStr).join(', ') + ']');
     L.push('updated: ' + isoLocal(Date.now()));
+    /* v4.5.0：把「最后一次投影落盘时间」写进 frontmatter —— OB 里一眼能看出
+       这篇跟插件是不是同步的（Dataview / 文件属性面板都读得到）。 */
+    L.push('synced: ' + isoLocal(Date.now()));
     L.push('rev: ' + ((prev.rev || 0) + 1));
     L.push('excerpts: ' + liveAnns.length);
     L.push('notes: ' + liveNotes.length);
@@ -705,39 +748,54 @@ const Projection = (function () {
     if (ver) L.push('generator: ' + yamlStr('闪灵笔记 ' + ver));
     L.push('---');
     L.push('');
+    /* v4.5.0：正文指纹。frontmatter 里的 updated / synced / rev 每次都变，
+       拿全文 hash 判重等于永远判不重 —— 于是每次保存都重写 md，用户在 OB 里
+       正编辑就被外部刷新打断。这里只把「正文」算作内容：内容没变就不碰文件。 */
+    const bodyStart = L.length;
     L.push('# ' + name);
     L.push('');
-    L.push('> 由「闪灵笔记」维护。笔记正文与摘录批注可以手改，保存后插件会读回；');
-    L.push('> 引用原文、页码、时间点、图片以插件为准。文件末尾加一个「手记」二级标题即可写自由内容，那一块不会被覆盖。');
+    /* v4.5.0：说明收进折叠 callout，默认只露一行，不再占掉首屏三行。
+       同时把这次改造最重要的契约写清楚：结构归插件、文字归 OB。 */
+    L.push('> [!info]- 关于这篇笔记 · 闪灵笔记 ' + (ver || ''));
+    L.push('> **结构以插件为准**：摘录 / 笔记的增、删、改会自动同步到这里，请勿手动增删这些区块。');
+    L.push('> **文字可以直接改**：正文、批注、下方 Eagle 注释区保存后插件会读回。');
+    L.push('> 原文引用、页码、时间点、图片由插件维护；文件末尾的「手记」区完全由你支配，插件不会覆盖。');
     L.push('');
 
     /* 每条都包一对 HTML 注释锚点：渲染时看不见，解析时能精确对回条目 id。
        用注释而不是 Obsidian 的 ^block，是因为 Typora / VSCode 也不会把它显示出来。 */
     if (liveAnns.length) {
-      L.push('## 摘录');
+      L.push('---');
       L.push('');
-      let lastHead = null;
+      L.push('## 摘录 · ' + liveAnns.length + ' 条');
+      L.push('');
       liveAnns.forEach((a, i) => {
         const head = useTime
           ? (typeof a.t === 'number' ? clockOf(a.t) + (typeof a.t1 === 'number' ? '–' + clockOf(a.t1) : '') : '未定位')
           : ('p.' + (a.page || 1));
         const aid = anchorId(a.id, 'ex' + i);
         const label = [TYPE_LABEL[a.type] || '', COLOR_LABEL[a.color] || ''].filter(Boolean).join(' · ');
+        anchors.push({
+          k: 'ex', a: blkId('ex', aid), n: i + 1,
+          t: (WL.noteAnchorTitle ? WL.noteAnchorTitle(a.note) : WL.noteTitle(a.note)) || ''
+        });
+        /* v4.5.0：每条摘录一个独立标题 + OB 块 ID。以前同一页码/时间点的
+           多条摘录共用一个「### p.2」，OB 里根本没法单独引用其中一条；
+           现在 [[书#^eaglenote-ex-aid]] 精确落到这一条，且改页码也不失效。 */
         L.push('<!-- eagle:ex:' + aid + ' -->');
-        if (head !== lastHead) {
-          L.push('### ' + head);
-          L.push('');
-          lastHead = head;
-        }
+        L.push('### ' + circled(i + 1) + ' ' + head + (label ? ' · ' + label : '') + ' ' + blkRef('ex', aid));
+        L.push('');
         if (String(a.text || '').trim()) {
-          L.push(quoteCallout(a.text, label || '原文'));
+          L.push(quoteCallout(a.text, '原文' + (label ? ' · ' + label : '')));
           L.push('');
         }
         if (a.image || a.imagePath) {
           const rel = a.image
             ? writeImage(id, a.id || ('img' + i), a.image, images)
             : writeImageFile(id, a.id || ('img' + i), a.imagePath, images);
-          if (rel) L.push('![' + (label || '摘录') + '](' + rel + ')');
+          /* |420 是 Obsidian 的图片宽度语法；不认这个语法的编辑器会把它
+             当成 alt 文字的一部分，图片照样显示，绝不会裂链。 */
+          if (rel) L.push('![' + (label || '摘录') + '|420](' + rel + ')');
           else L.push('_（图片未能导出）_');
           L.push('');
         }
@@ -746,34 +804,36 @@ const Projection = (function () {
           L.push('[' + (label || '片段') + '：' + (pathMod.basename(a.filePath) || '打开') + '](' + a.filePath + ')');
           L.push('');
         }
-        /* 批注区固定用 **笔记** 起头 —— 回读时靠这个标记切段 */
+        /* 批注区：折叠式 callout（旧格式 **笔记** 仍能被回读层识别） */
         if (String(a.note || '').trim()) {
-          L.push('**笔记**');
-          L.push('');
-          L.push(String(a.note).trim());
+          L.push(noteCallout(a.note));
           L.push('');
         }
-        /* 图注里已经有「框选 · 黄」了，不再多写一行注释 —— 三条纯图摘录连着看太吵。 */
         L.push('<!-- /eagle:ex:' + aid + ' -->');
         L.push('');
       });
     }
 
     if (liveNotes.length) {
-      L.push('## 笔记');
+      L.push('---');
+      L.push('');
+      L.push('## 笔记 · ' + liveNotes.length + ' 条');
       L.push('');
       liveNotes.forEach((n, i) => {
         const head = n.page ? ('第 ' + n.page + ' 页') : '独立笔记';
         const nid = anchorId(n.id, 'nt' + i);
-        /* v4.3.6：笔记标题（正文第一行）升级成真正的 #### 标题头 —— Obsidian 的
-           [[书#标题]] 只认标题，之前标题藏在正文里，插件里能跳、OB 里全是未解析链接。
-           标题头用原始第一行（不用 WL.noteTitle 的剥壳版：第一行里的 [[双链]]
-           不能丢），正文从第二行写起（OB 里不重复显示标题）；回读时标题头
-           还原成 md 第一行。 */
+        anchors.push({
+          k: 'nt', a: blkId('nt', nid), n: i + 1,
+          t: (WL.noteAnchorTitle ? WL.noteAnchorTitle(n.md) : WL.noteTitle(n.md)) || ''
+        });
+        /* v4.3.6 的 #### 原始第一行继续保留：它是旧版 [[书#标题]] 的锚点，
+           也是人在 OB 里一眼认出这条笔记的名字。
+           v4.5.0 新加的 ### 结构头挂稳定块 ID：[[书#^eaglenote-nt-nid]]
+           指到这条笔记本体，不受标题改动 / 重名影响。两层各司其职。 */
         const mdText = String(n.md == null ? '' : n.md).trim();
         const firstLine = mdText ? mdText.split(/\r?\n/)[0].trim() : '';
         L.push('<!-- eagle:nt:' + nid + ' -->');
-        L.push('### ' + head);
+        L.push('### ' + circled(i + 1) + ' ' + head + ' ' + blkRef('nt', nid));
         if (firstLine) {
           L.push('#### ' + firstLine);
         }
@@ -785,13 +845,14 @@ const Projection = (function () {
         if (mdText) {
           const rest = firstLine ? mdText.split(/\r?\n/).slice(1).join('\n').trim() : mdText;
           if (rest) {
-            L.push(rest);
+            /* 正文里的 # 标题转义成普通文本，别把 OB 大纲搅成两级文档 */
+            L.push(escapeHeadings(rest));
             L.push('');
           }
         }
         if (n.image) {
           const rel = writeImage(id, n.id || ('note' + i), n.image, images);
-          if (rel) L.push('![](' + rel + ')');
+          if (rel) L.push('![笔记配图|420](' + rel + ')');
           L.push('');
         }
         L.push('<!-- /eagle:nt:' + nid + ' -->');
@@ -802,7 +863,11 @@ const Projection = (function () {
     /* Eagle 注释栏小节：annotation 双向同步。锚点里的内容 = Eagle 注释栏；
        在 md 里改会写回 Eagle（官方 API），在 Eagle 里改会投影到这里。
        空的时候锚点内留空 —— 别放占位文字，否则回读会把占位符当成注释写进 Eagle。 */
-    L.push('## Eagle 注释（双向同步）');
+    L.push('---');
+    L.push('');
+    L.push('## 附 · Eagle 注释（双向同步）');
+    L.push('');
+    L.push('> [!tip]- 这一节会写回 Eagle 注释栏；在 Eagle 里改也会投影到这里。');
     L.push('');
     L.push('<!-- eagle:ec:' + ecAnchor + ' -->');
     if (String(ecText).trim()) {
@@ -829,7 +894,11 @@ const Projection = (function () {
       L.push('');
     }
 
-    return { text: L.join('\n'), images, id, rev: (prev.rev || 0) + 1, ec: ecText, ecAnchor };
+    return {
+      text: L.join('\n'),
+      bodyKey: U.hashKey(L.slice(bodyStart).join('\n')),
+      images, anchors, id, rev: (prev.rev || 0) + 1, ec: ecText, ecAnchor
+    };
   }
 
   /* ---------- 从 MD 读回 ---------- */
@@ -855,11 +924,25 @@ const Projection = (function () {
       .trim();
   }
 
-  /* 摘录块的批注 = 「**笔记**」之后的文本；没有这个标记说明结构被改过，不回读 */
+  /* 摘录块的批注。v4.5.0 新格式是 > [!note] 批注 callout；
+     v4.4 及更早是独立一行 **笔记**。两种都要认 —— 用户磁盘上存量的 md
+     还是旧格式，升级后第一次回读不能把手改的内容吞掉。 */
   function noteOfEx(seg) {
-    const m = /^\s*\*\*笔记\*\*\s*$/m.exec(String(seg || ''));
+    const s = String(seg || '');
+    let m = /^\s*>\s*\[!note\][^\n]*\r?\n/m.exec(s);
+    if (m) {
+      const tail = s.slice(m.index + m[0].length).split(/\r?\n/);
+      const kept = [];
+      for (let i = 0; i < tail.length; i++) {
+        const l = tail[i];
+        if (!/^\s*>\s?/.test(l)) break;             // callout 结束
+        kept.push(l.replace(/^\s*>\s?/, '').replace(/^(\s*)\\(#{1,6}\s)/, '$1$2'));
+      }
+      return dropNoise(kept.join('\n'));
+    }
+    m = /^\s*\*\*笔记\*\*\s*$/m.exec(s);
     if (!m) return null;
-    return dropNoise(String(seg).slice(m.index + m[0].length));
+    return dropNoise(s.slice(m.index + m[0].length));
   }
 
   /* 笔记块 = 去掉标题行、引用行、图片行之后剩下的正文。
@@ -893,7 +976,8 @@ const Projection = (function () {
       if (/^\s*>/.test(l)) continue;                                   // 引用行
       if (/^\s*!\[[^\]]*\]\([^)]*\)\s*$/.test(l)) continue;            // 图片行
       if (/^\s*<!--[\s\S]*?-->\s*$/.test(l)) continue;                 // 注释行
-      kept.push(l);
+      /* v4.5.0：还原投影时为了不污染 OB 大纲而转义的 \# 行首 */
+      kept.push(l.replace(/^(\s*)\\(#{1,6}\s)/, '$1$2'));
     }
     const body = dropNoise(kept.join('\n'));
     return titleTaken ? (titleTaken + (body ? '\n' + body : '')) : body;
@@ -1359,6 +1443,7 @@ const Projection = (function () {
           if (fs.existsSync(ad) && !fs.readdirSync(ad).length) fs.rmdirSync(ad);
         } catch (e) { /* ignore */ }
         if (manifest[id]) { delete manifest[id]; markManifest(); }
+        try { if (typeof Dbg !== 'undefined' && Dbg.log) Dbg.log('proj.remove', { id: id, why: 'empty' }); } catch (e) { /* ignore */ }
         return { ok: true, removed: true };
       }
       /* 有手记 / 有 md 独有注释：往下走写成空壳（① 会把手改注释送进队列写回 Eagle） */
@@ -1386,9 +1471,11 @@ const Projection = (function () {
     try { out = build(meta, data); } catch (e) {
       lastError = '组装失败：' + (e.message || e);
       console.warn('[Projection] 组装失败', e);
+      try { if (typeof Dbg !== 'undefined' && Dbg.log) Dbg.log('proj.write.err', { id: id, at: 'build', error: lastError }); } catch (e) { /* ignore */ }
       return { ok: false, error: lastError };
     }
-    const hash = U.hashKey(out.text);
+    /* v4.5.0：全文 hash 只在真正落盘时算（见下面 manifest.hash）。
+       判重一律用 out.bodyKey，避免 frontmatter 时间戳让每次保存都判不重。 */
 
     /* v4.0 双链：出链索引进 manifest。md 正文一个字不动（反链运行时聚合，
        不写回文件——否则 A 引 B、B 引 A 会互相触发重写）。 */
@@ -1413,11 +1500,22 @@ const Projection = (function () {
       return out;
     })();
 
-    if (!force && prev.hash === hash && file && fs.existsSync(file)) {
-      /* 文本没变也要把 links/nt 补上：老 manifest 升级后第一次同步就补齐 */
+    /* v4.5.0：用「正文指纹」判重，而不是全文 hash。frontmatter 里的
+       updated / synced / rev 每次都会变，全文 hash 永远判不重，结果是
+       每次保存都重写 md —— 用户在 OB 里正编辑就被外部刷新打断。
+       正文没变就一个字节都不碰，只把索引补齐（老 manifest 升级场景）。 */
+    if (!force && prev.bodyKey && prev.bodyKey === out.bodyKey && file && fs.existsSync(file)) {
+      let cur = '';
+      try { cur = fs.readFileSync(file, 'utf8'); } catch (e) { cur = ''; }
+      const curHash = cur ? U.hashKey(cur) : prev.hash;
       if (prev && (JSON.stringify(prev.links) !== JSON.stringify(outLinks)
-        || JSON.stringify(prev.nt) !== JSON.stringify(noteTitles))) {
-        manifest[id] = Object.assign({}, prev, { links: outLinks, nt: noteTitles });
+        || JSON.stringify(prev.nt) !== JSON.stringify(noteTitles)
+        || JSON.stringify(prev.anchors) !== JSON.stringify(out.anchors)
+        || curHash !== prev.hash)) {
+        manifest[id] = Object.assign({}, prev, {
+          links: outLinks, nt: noteTitles, anchors: out.anchors,
+          hash: curHash, bodyKey: out.bodyKey
+        });
         markManifest();
         wikiCache = null;
       }
@@ -1487,12 +1585,14 @@ const Projection = (function () {
         file: relFile,
         title: safeName(U.stripExt((meta && meta.name) || (data && data.fileName) || '')),
         hash: U.hashKey(out.text),
+        bodyKey: out.bodyKey,
         items,
         hand: hand || '',
         rev: out.rev,
         images: out.images,
         links: outLinks,
         nt: noteTitles,
+        anchors: out.anchors,
         aliases: aliases,
         at: Date.now()
       };
@@ -1501,10 +1601,12 @@ const Projection = (function () {
       lastAt = Date.now();
       lastError = null;
       wroteCount++;
+      try { if (typeof Dbg !== 'undefined' && Dbg.log) Dbg.log('proj.write', { id: id, rev: out.rev, units: (out.anchors || []).length }); } catch (e) { /* ignore */ }
       return { ok: true, file };
     } catch (e) {
       lastError = e.message || String(e);
       console.warn('[Projection] 写入失败', file, e);
+      try { if (typeof Dbg !== 'undefined' && Dbg.log) Dbg.log('proj.write.err', { id: id, at: 'disk', error: lastError }); } catch (e) { /* ignore */ }
       return { ok: false, error: lastError };
     }
   }
@@ -1643,7 +1745,18 @@ const Projection = (function () {
         x.rec.nt = sm[x.id];   // 回填进内存 rec（不立即落 manifest，下次 writeNow 会带上）
       }
       notes.sort((a, b) => a.localeCompare(b, 'zh'));
-      tree.push({ book: x.rec.title, self: false, notes: notes });
+      /* v4.5.0：候选并行带上稳定块 ID（顺序与 notes 严格一致）。
+         editor.js 按同一索引取它生成 [[书#^块ID|标题]]，OB 里就能精确
+         落到那一条；老 manifest 没有 anchors 时退化为纯标题链接。 */
+      const byTitle = {};
+      (Array.isArray(x.rec.anchors) ? x.rec.anchors : []).forEach((a) => {
+        if (a && a.t && a.a) {
+          const k = WL.normalize(a.t);
+          if (!byTitle[k]) byTitle[k] = a.a;
+        }
+      });
+      const noteAnchors = notes.map((t) => byTitle[WL.normalize(t)] || '');
+      tree.push({ book: x.rec.title, self: false, notes: notes, noteAnchors: noteAnchors });
     });
     /* v4.2.3：全库条目并进候选 —— 没打开过的书/视频也能被 [[ 引用。
        已经在 manifest 里的（打开过、有笔记）不重复；同名去重（带笔记的优先）。 */
@@ -2011,7 +2124,7 @@ const Projection = (function () {
     if (!ids.length) return { ok: true, changed: 0 };
     const want = {};
     ids.forEach((id) => { want[id] = true; });
-    let changed = 0, docs = 0;
+    let changed = 0, docs = 0, refreshed = 0;
     let keys = [];
     try {
       const idx = Store.getIndex();
@@ -2034,12 +2147,70 @@ const Projection = (function () {
       let data = null;
       try { data = Store.normalize(raw, meta); } catch (e) { data = raw; }
       docs++;
-      if (!want[keyOf(meta, data)]) return;   // 这本没被外部改过
-      const r = writeNow(meta, data, false);  // 内部：readExternal → onExternal 合并 → 重写
-      if (r && r.ok && !(r.skipped && !r.removed)) changed++;
+      const id = keyOf(meta, data);
+      if (!want[id]) return;
+      const rec = manifest[id];
+      if (!rec || !rec.file) return;
+      const f = pathMod.join(root, rec.file);
+      let text = '';
+      try {
+        if (!fs.existsSync(f)) return;
+        text = fs.readFileSync(f, 'utf8');
+      } catch (e) { return; }
+      const curHash = U.hashKey(text);
+      if (curHash === rec.hash) {
+        /* 只是 mtime 被碰过、内容没变：推进认领时间，别每轮重复读盘 */
+        rec.at = Date.now(); refreshed++; markManifest();
+        return;
+      }
+      /* ① 把 OB 里的文字改动合并回权威 JSON */
+      const edits = readExternal(meta, data, text, rec);
+      if (edits.length) {
+        const bad = edits.filter((e) => e.conflict && String(e.old || '').trim());
+        if (bad.length) writeConflictFile(f, bad);
+        inExternal++;
+        try { if (typeof hooks.onExternal === 'function') hooks.onExternal(meta, data, edits); }
+        catch (e) { console.warn('[Projection] 合并回调失败', e); }
+        finally { inExternal--; }
+        try { if (typeof hooks.onMerged === 'function') hooks.onMerged(meta, data, edits); } catch (e) { /* ignore */ }
+        changed++;
+      }
+      /* ② v4.5.0 关键改动：**不重写 md**。轮询缩到 3s 后，若回读顺手把文件
+         重新生成一遍，用户在 OB 里正打着字会被外部刷新打断、甚至丢字符。
+         只把 manifest 认领到「磁盘当前这一版」：结构仍以插件为准，
+         等插件里真的发生增删改时由 writeNow 重新生成整篇。 */
+      const h = itemHashes(data);
+      h['ec:' + anchorId(id, 'ec')] = U.hashKey(String(currentEcText(id) || '').trim());
+      const items = {};
+      Object.keys(h).forEach((h2) => { items[h2] = { w: h[h2], l: h[h2] }; });
+      rec.hash = curHash;
+      rec.items = items;
+      rec.at = Date.now();
+      try { const hand = handOf(text); if (hand) rec.hand = hand; } catch (e) { /* ignore */ }
+      markManifest();
     });
     flushManifest();
-    return { ok: true, changed, docs };
+    return { ok: true, changed, docs, refreshed };
+  }
+
+  /* v4.5.0：块 ID → 笔记标题 / 书名。插件里点 [[书#^块ID|别名]] 时，
+     先用它把稳定 ID 翻成可读标题，再走原来的 locateNoteByTitle。 */
+  function titleByAnchor(a) {
+    const want = String(a || '').replace(/^\^/, '').trim();
+    if (!want) return null;
+    const ids = Object.keys(manifest);
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      const rec = manifest[id];
+      if (!rec || !Array.isArray(rec.anchors)) continue;
+      for (let j = 0; j < rec.anchors.length; j++) {
+        const x = rec.anchors[j];
+        if (x && x.a === want) {
+          return { id: id, book: rec.title || '', title: x.t || '', kind: x.k || '', n: x.n || 0 };
+        }
+      }
+    }
+    return null;
   }
 
   function rebuildAll(force) {
@@ -2095,6 +2266,12 @@ const Projection = (function () {
     setHooks,
     safeName,
     anchorId,
+    /* v4.5.0 块锚点与排版工具（测试与跳转链路用） */
+    blkId,
+    blkRef,
+    escapeHeadings,
+    noteCallout,
+    titleByAnchor,
     build,
     parseBlocks,
     noteOfEx,
@@ -2132,6 +2309,8 @@ const Projection = (function () {
     syncExternal,
     /* 测试用：观察 / 回拨注释写回状态（ecLocalAt 回拨可模拟「Eagle 迟迟不落盘」） */
     get _ec() { return { ecLocal: ecLocal, ecLocalAt: ecLocalAt, ecQueue: ecQueue, TTL: EC_LOCAL_TTL }; },
+    get WRITE_DELAY() { return WRITE_DELAY; },
+    get BLK() { return BLK; },
     get SUB() { return SUB; },
     get HUB_NAME() { return HUB_NAME; },
     get HAND() { return HAND; }

@@ -29,8 +29,16 @@ ok(/if \(v === 'off'\) enabled = false;/.test(P), '默认开启：显式存过 o
 ok(/v4\.3\.0：Obsidian 同步复活/.test(P), '注释标明复活原因（为什么这么写）');
 ok(has(P, 'function syncExternal()') && /syncExternal,/.test(P), 'syncExternal 已实现并导出');
 ok(/const ids = externallyChanged\(\);/.test(P), 'syncExternal 以 externallyChanged() 找被外部动过的条目');
-ok(/Store\.readDocByKey\(k\)/.test(P) && /writeNow\(meta, data, false\)/.test(P.slice(P.indexOf('function syncExternal'))),
-  'syncExternal 走 rebuildAll 同款 meta 构造 + writeNow（内部先合并再写）');
+/* v4.5.0：回读改成「只吸收、不重写」——3s 轮询下若顺手重写 md，
+   用户在 OB 里正打着字会被外部刷新打断。manifest 认领到磁盘当前版本即可。 */
+{
+  const syncSrc = P.slice(P.indexOf('function syncExternal'), P.indexOf('function rebuildAll'));
+  ok(/Store\.readDocByKey\(k\)/.test(syncSrc)
+    && /readExternal\(meta, data, text, rec\)/.test(syncSrc)
+    && /rec\.hash = curHash/.test(syncSrc)
+    && !/writeNow\(/.test(syncSrc),
+    'syncExternal 同款 meta 构造 + 只吸收不重写（不打断 OB 编辑）');
+}
 ok(/flushManifest\(\);\s*return \{ ok: true, changed/.test(P.replace(/\r/g, '')), 'syncExternal 收尾 flushManifest');
 ok(has(P, "if (!hand && !prev.hand && !ecInFile)") === false || true, '空内容回收守卫仍在（不回归）');
 

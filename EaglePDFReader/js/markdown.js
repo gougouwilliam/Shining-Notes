@@ -97,12 +97,15 @@ const Markdown = (function () {
       const alias = bar >= 0 ? inner.slice(bar + 1).trim() : '';
       if (!target) return m;
       const h = target.indexOf('#');
+      const sub = h >= 0 ? target.slice(h + 1).trim() : '';
+      /* v4.5.0：#^块ID 是精确定位，别把 ^eaglenote-… 当笔记标题显示出来 */
+      const isBlk = sub.charAt(0) === '^';
       const label = alias || (h >= 0
-        ? target.slice(0, h).trim() + ' › ' + target.slice(h + 1).trim()
+        ? target.slice(0, h).trim() + (isBlk ? ' › 指定笔记' : ' › ' + sub)
         : target);
       return keep('<a class="wikilink" href="javascript:void(0)" data-wtarget="'
         + U.escapeHtml(target) + '" title="跳转到《' + U.escapeHtml(h >= 0 ? target.slice(0, h).trim() : target) + '》'
-        + (h >= 0 ? ' 的笔记「' + U.escapeHtml(target.slice(h + 1).trim()) + '」' : '') + '">'
+        + (h >= 0 ? (isBlk ? ' 的指定笔记' : ' 的笔记「' + U.escapeHtml(sub) + '」') : '') + '">'
         + U.escapeHtml(label) + '</a>');
     });
 

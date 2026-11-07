@@ -38,7 +38,9 @@ ok(/const firstLine = mdText \? mdText\.split\(\/\\r\?\\n\/\)\[0\]\.trim\(\) : '
 ok(/L\.push\('#### ' \+ firstLine\);/.test(PJ), '标题升级成 #### 标题头');
 ok(/const rest = firstLine \? mdText\.split\(\/\\r\?\\n\/\)\.slice\(1\)\.join\('\\n'\)\.trim\(\) : mdText;/.test(PJ),
   '正文从第二行写起（OB 里标题不重复显示）');
-ok(/L\.push\('### ' \+ head\);\s*\n\s*if \(firstLine\) \{/.test(PJ), '标题头紧跟 ### 页码/独立笔记 行');
+/* v4.5.0：### 结构头带编号 + OB 块 ID，但 #### 原始第一行仍紧跟其后（旧链接锚点） */
+ok(/L\.push\('### ' \+ circled\(i \+ 1\)[\s\S]{0,260}?\n\s*if \(firstLine\) \{/.test(PJ),
+  '标题头紧跟 ### 页码/独立笔记 行（v4.5.0 结构头挂块 ID）');
 ok(!/WL\.noteTitle\(mdText\)/.test(PJ), '标题头不再走 WL.noteTitle（剥壳会丢 [[ ]]）');
 
 console.log('—— ③ 笔记级：回读消费标题头（真实 bodyOfNt 沙箱，返回存储口径字符串）——');

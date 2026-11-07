@@ -135,7 +135,8 @@ section('app.js v4.2 接线（静态）');
   const A = read('js/app.js');
   ok(/function locateNoteByTitle\(title\)/.test(A), 'locateNoteByTitle 笔记定位函数');
   ok(A.indexOf('WikiLink.splitTarget') > 0, '跳转前先拆 书/笔记');
-  ok((A.match(/if \(split\.note\) locateNoteByTitle\(split\.note\)/g) || []).length === 2,
+  /* v4.5.0：跳转目标统一为 noteTarget（块锚点先翻成标题，旧链接原样透传） */
+  ok((A.match(/if \(noteTarget\) locateNoteByTitle\(noteTarget\)/g) || []).length === 2,
     'manifest 命中与搜索兜底两条路都会定位笔记');
   ok(A.indexOf("switchTab('notes')") > 0 && A.indexOf('scrollIntoView') > 0, '定位 = 切笔记页 + 滚进视野');
   ok(A.indexOf('wikiTree: wikiTreeOpt') > 0, '编辑器注入层级候选');

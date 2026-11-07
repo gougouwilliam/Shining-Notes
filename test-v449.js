@@ -265,8 +265,9 @@ async function main() {
     'IPC_WINDOW_DENY 硬拦截仍在（永不再碰主窗口生命周期）');
   ok(/setIgnoreMenuShortcuts/.test(BR) && !/\.setIgnoreMenuShortcuts\(true\)\s*;\s*[\s\S]{0,80}window\.state/.test(BR),
     '快捷键是 webContents 运行时开关，不写任何磁盘状态');
-  ok(M1.version === M2.version && M1.version === '4.4.9' && /^\d+\.\d+\.\d+$/.test(M1.version),
-    '双 manifest 同步 4.4.9（' + M1.version + ' / ' + M2.version + '）');
+  /* 项目约定：旧套件里的硬编码版本断言一律放宽为三段式，不随版本号追改 */
+  ok(M1.version === M2.version && /^\d+\.\d+\.\d+$/.test(M1.version),
+    '双 manifest 版本一致且为三段式（' + M1.version + ' / ' + M2.version + '）');
   ok(/## 更新记录 · 4\.4\.9/.test(RD), 'README 有 4.4.9 更新记录');
   ok(/看门狗|自愈|shortcuts\.ok/.test(RD), 'README 说明看门狗与回执');
   ok(/shortcutsSettled|看门狗/.test(VF), 'verify-features 有对应自查项');

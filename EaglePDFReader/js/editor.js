@@ -554,6 +554,21 @@ const NoteEditor = (function () {
 
     const WIKI_CAP = 24;
 
+    /* v4.5.0：候选插入的目标。有稳定块 ID 时写 [[书#^块ID|显示名]] ——
+       Obsidian 会精确落到那一条摘录/笔记；老数据没有锚点才退回 [[书#标题]]。
+       别名段要清掉 | [ ]，否则会把链接语法本身撑破。 */
+    function wikiVal(node, t, a) {
+      const list = Array.isArray(node.noteAnchors) ? node.noteAnchors : [];
+      let anchor = a || '';
+      if (!anchor) {
+        const ix = (node.notes || []).indexOf(t);
+        if (ix >= 0) anchor = list[ix] || '';
+      }
+      if (!anchor) return node.book + '#' + t;
+      const label = String(t || '').replace(/[|\]\[]/g, ' ').trim() || '笔记';
+      return node.book + '#^' + anchor + '|' + label;
+    }
+
     function wikiQuery() {
       const d = wikiDetect();
       if (!d) return null;
@@ -582,7 +597,11 @@ const NoteEditor = (function () {
           if (tBook.length) {
             bSc = matchScore(nB, tBook) || null;
             nHits = notes
-              .map((t) => { const sc = matchScore(t, tBook); return sc && !sc.weak ? { t: t, sc: sc.score } : null; })
+              .map((t, ix) => {
+                const sc = matchScore(t, tBook);
+                return sc && !sc.weak
+                  ? { t: t, sc: sc.score, a: (node.noteAnchors || [])[ix] || '' } : null;
+              })
               .filter(Boolean);
           }
           if ((!bSc || bSc.weak) && !nHits.length) return;
@@ -592,8 +611,12 @@ const NoteEditor = (function () {
             if (!bSc || bSc.weak) return;
           }
           nHits = tNote.length
-            ? notes.map((t) => { const sc = matchScore(t, tNote); return sc && !sc.weak ? { t: t, sc: sc.score } : null; }).filter(Boolean)
-            : notes.map((t) => ({ t: t, sc: 50 }));
+            ? notes.map((t, ix) => {
+                const sc = matchScore(t, tNote);
+                return sc && !sc.weak
+                  ? { t: t, sc: sc.score, a: (node.noteAnchors || [])[ix] || '' } : null;
+              }).filter(Boolean)
+            : notes.map((t, ix) => ({ t: t, sc: 50, a: (node.noteAnchors || [])[ix] || '' }));
           if (!nHits.length) return;
         }
         nHits.sort((a, b) => b.sc - a.sc);
@@ -612,23 +635,24 @@ const NoteEditor = (function () {
         if (bookHit && !node.self) rows.push({ value: node.book, label: node.book, hl: tBook });
         if (tNote == null) {
           /* 书名中但笔记标题没（强）命中：预览沿用旧习惯给前几条，别让书行孤着 */
-          let preview = nHits.map(function (x2) { return x2.t; });
+          let preview = nHits.map(function (x2) { return { t: x2.t, a: x2.a }; });
           if (bookHit && !preview.length) {
-            preview = (node.notes || []).slice(0, tBook.length ? 6 : 3);
+            preview = (node.notes || []).slice(0, tBook.length ? 6 : 3)
+              .map((t, ix) => ({ t: t, a: (node.noteAnchors || [])[ix] || '' }));
           }
           if (bookHit) {
-            preview.forEach((t) => {
-              rows.push({ value: node.book + '#' + t, label: t, sub: true, hl: tBook });
+            preview.forEach((x2) => {
+              rows.push({ value: wikiVal(node, x2.t, x2.a), label: x2.t, sub: true, hl: tBook });
             });
           } else {
             /* 书名没中（或弱命中被滤）但笔记标题强命中：列出命中的笔记 */
-            preview.slice(0, 10).forEach((t) => {
-              rows.push({ value: node.book + '#' + t, label: t, sub: true, hl: tBook });
+            preview.slice(0, 10).forEach((x2) => {
+              rows.push({ value: wikiVal(node, x2.t, x2.a), label: x2.t, sub: true, hl: tBook });
             });
           }
           total += 1 + (node.notes || []).length;
         } else {
-          nHits.forEach((x2) => rows.push({ value: node.book + '#' + x2.t, label: x2.t, sub: true, hl: tNote }));
+          nHits.forEach((x2) => rows.push({ value: wikiVal(node, x2.t, x2.a), label: x2.t, sub: true, hl: tNote }));
           total += nHits.length;
         }
       });

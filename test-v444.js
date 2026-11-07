@@ -120,7 +120,8 @@ console.log('—— ④ Bridge：按 sender 定向关窗通道 ——');
 console.log('—— ⑤ app.js：退出前摘 beforeunload ——');
 {
   ok(/let detachUnloadPersist = null;/.test(APP), '模块级摘钩句柄');
-  ok(/const onUnloadPersist = \(\) => \{[\s\S]{0,180}?persist\(true\)[\s\S]{0,180}?setHostShortcuts\(false\)/.test(APP), 'v4.4.6：卸载时落盘并恢复宿主快捷键');
+  /* v4.5.0：卸载时多了一步 Projection.flush()，窗口放宽到 600 字符 */
+  ok(/const onUnloadPersist = \(\) => \{[\s\S]{0,600}?persist\(true\)[\s\S]{0,600}?setHostShortcuts\(false\)/.test(APP), 'v4.4.6：卸载时落盘并恢复宿主快捷键');
   ok(/window\.addEventListener\('beforeunload', onUnloadPersist\)/.test(APP), '具名监听已注册');
   ok(/window\.removeEventListener\('beforeunload', onUnloadPersist\)/.test(APP), '摘钩时真正 remove 掉');
   ok(!/window\.addEventListener\('beforeunload', \(\) => \{ persist\(true\); \}\)/.test(APP),

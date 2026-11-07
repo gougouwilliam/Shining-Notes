@@ -161,7 +161,8 @@ const blocks = P.parseBlocks(md1);
 ok(Object.keys(blocks.ex).length === 2, '解析出 2 段摘录');
 ok(Object.keys(blocks.nt).length === 1, '解析出 1 段笔记');
 ok(has(md1, '> 脾动脉的走行要贴着胰背上缘'), '引用原文以引用块出现');
-ok(has(md1, '**笔记**'), '摘录批注用「**笔记**」起头（回读靠它切段）');
+/* v4.5.0：批注区升级成 > [!note] 折叠 callout；旧 **笔记** 仍由 noteOfEx 兼容 */
+ok(has(md1, '> [!note] 批注'), '摘录批注走 callout（回读仍能精确切段）');
 ok(P.noteOfEx(blocks.ex.ex_a1) === '这里有个解剖变异', 'noteOfEx 能取回批注正文');
 ok(P.bodyOfNt(blocks.nt.nt_c3, 'Cleveland 法 vs Warshaw 法，后者脾梗风险更高') === 'Cleveland 法 vs Warshaw 法，后者脾梗风险更高', 'bodyOfNt 能取回笔记正文（v4.3.6 标题头消费后还原成存储口径）');
 ok(has(md1, '## 摘录') && has(md1, '## 笔记'), '有「摘录」「笔记」两个分区');
@@ -253,12 +254,13 @@ console.log('\n[7] 时间轴只给视频，源文件要反查得到');
 const P2 = loadProjection({});
 const pdfMd = P2.build({ itemId: 'p1', name: 'a.pdf', ext: 'pdf' },
   { annotations: [{ id: 'a1', page: 3, t: 12.5, text: '脾动脉' }] }).text;
-ok(pdfMd.indexOf('### p.3') >= 0, 'PDF 按页码分节');
+/* v4.5.0：不再「同页码共用一个 ### 标题」，每条摘录都有自己的编号标题 + 块 ID */
+ok(/###\s+①\s+p\.3\s+\^eaglenote-ex-/.test(pdfMd), 'PDF 每条摘录独立成节（页码在标题里，带块 ID）');
 ok(pdfMd.indexOf('00:12') < 0, 'PDF 的框选虽然带 t，也不会被写成时间轴（3.35 的坑）');
 
 const vidMd = P2.build({ itemId: 'v1', name: 'b.mp4', ext: 'mp4' },
   { annotations: [{ id: 'b1', t: 12.5, t1: 18, text: '这里' }] }).text;
-ok(vidMd.indexOf('### 00:12–00:18') >= 0, '视频按时间轴分节');
+ok(/###\s+①\s+00:12–00:18\s+\^eaglenote-ex-/.test(vidMd), '视频每条摘录独立成节（时间轴在标题里，带块 ID）');
 
 /* 假资料库：images/<id>.info/metadata.json 里有 name + ext，真实文件按 <name>.<ext> 落盘 */
 const tmpLib = mkTmp('lib');
@@ -288,7 +290,8 @@ ok(has(PJ, "['E:', 'D:', 'F:']"), '默认优先落在 E 盘（其次 D/F，再�
 ok(has(PJ, ".eaglenote-write-test"), '选目录时真写探针，只读盘会被跳过');
 ok(has(PJ, 'function writeConflictFile'), '有冲突备份实现');
 ok(has(PJ, 'function externallyChanged'), '有外部变更扫描');
-ok(has(PJ, "const WRITE_DELAY = 2600"), '打字停 2.6 秒才落盘（别把同步盘写爆）');
+/* v4.5.0「绝对同步」：防抖 2.6s → 0.7s；正文指纹判重保证不空转重写 */
+ok(has(PJ, "const WRITE_DELAY = 700"), '打字停 0.7 秒即落盘（绝对同步，OB 端及时可见）');
 
 /* v4.2.12：md 投影下线，断言随功能反转更新 —— 索引随库走，md 同步面全删 */
 ok(has(BR, 'migrateLegacyIndex(state.dataDir)'), 'Bridge 启动时把旧位置别名索引迁入 .eaglenote（v4.2.12）');

@@ -33,7 +33,10 @@ ok(!A.includes('chkMdProj'), 'app.js 不再引用 md 开关');
 ok(!H.includes('chkMdProj') && !H.includes('btnWbRebuild') && !H.includes('btnWbSyncProj') && !H.includes('btnWbOpenHub') && !H.includes('btnWbChangeProj'), '工作台设置区 md 开关/按钮已删');
 ok(!A.includes('installProjHooks') || A.indexOf('installProjHooks') === A.lastIndexOf('installProjHooks'), '同步钩子函数已删（仅剩墓碑注释）');
 ok(!/setInterval\(function \(\) \{\s*try \{\s*if \(typeof Projection === 'undefined' \|\| !Projection\.isOn\(\)\) return;\s*syncFromDisk/.test(A), '45 秒磁盘轮询已删');
-ok(!/rebuildAll\(false\)/.test(A), '启动时历史补齐已删');
+/* v4.5.0「绝对同步」反转：启动 3s 后做一次全量对账（单次、force=false），
+   把插件没运行期间 Eagle / OB 的变化对齐，顺带迁移旧排版。 */
+ok(/startProjSync\._rebuildKick[\s\S]{0,400}Projection\.rebuildAll\(false\)/.test(A),
+  'v4.5.0 启动全量对账只跑一次，且 force=false 不空转重写');
 
 console.log('== 3. 别名索引随库（bridge 决策）==');
 ok(/migrateLegacyIndex\(state\.dataDir\)/.test(B), 'bridge 启动时把旧位置索引迁入 dataDir');

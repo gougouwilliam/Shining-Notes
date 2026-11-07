@@ -7,7 +7,10 @@
  *   [[书名#笔记]]     笔记级链接（v4.2）—— 打开书后定位到那条笔记；
  *                     笔记标题 = 笔记正文的第一行（同 UI 口径，见 noteTitle）
  *   [[书名#笔记|别名]]
- *   块级 [[书名#ec:xx]] 语法层不解析（ec 锚点留给以后）
+ *   [[书名#^eaglenote-nt-xxx|显示名]]   块级链接（v4.5.0）—— OB 原生块引用，
+ *                     直接跳到那一条笔记/摘录所在位置，而不是只打开文件。
+ *                     块 ID 由投影层按条目 id 生成，改标题、重名都不会断链。
+ *                     插件里点它会先把块 ID 翻成笔记标题再定位。
  *
  * 职责边界：
  *   - 只管「文本 → 链接列表 / 上下文摘录」；目标解析（书名 → 条目）在
@@ -64,15 +67,30 @@ const WikiLink = (function () {
   }
 
   /* v4.2：目标拆成书名与笔记级部分。'书#笔记' → { book:'书', note:'笔记' }；
-     没有 # 时 note 为空。第一个 # 之后的全部算笔记标题（标题里再出现 # 也归标题）。 */
+     没有 # 时 note 为空。第一个 # 之后的全部算笔记标题（标题里再出现 # 也归标题）。
+     v4.5.0：新增第三种形态 '书#^块ID' —— Obsidian 块引用，目标直接落到
+     那条摘录/笔记本体，不受标题改名、重名、标题里含 # 或 [[ ]] 的影响。
+     这时 note 为空、anchor 为块 ID（不带 ^）。旧链接全部照常解析。 */
   function splitTarget(t) {
     const s = String(t == null ? '' : t).trim();
     const h = s.indexOf('#');
-    if (h < 0) return { book: s, note: '' };
-    return { book: s.slice(0, h).trim(), note: s.slice(h + 1).trim() };
+    if (h < 0) return { book: s, note: '', anchor: '' };
+    const rest = s.slice(h + 1).trim();
+    const book = s.slice(0, h).trim();
+    if (rest.charAt(0) === '^') return { book: book, note: '', anchor: rest.slice(1).trim() };
+    return { book: book, note: rest, anchor: '' };
   }
 
   function bookOf(t) { return splitTarget(t).book; }
+  /* 生成块级目标：[[书#^块ID|显示名]] 里的目标段。 */
+  function anchorTarget(book, anchor) {
+    return String(book == null ? '' : book).trim() + '#^' +
+      String(anchor == null ? '' : anchor).trim().replace(/^\^/, '');
+  }
+  /* 别把 OB 不认的字符塞进块 ID：只留 [A-Za-z0-9-] */
+  function safeAnchor(a) {
+    return String(a == null ? '' : a).trim().replace(/^\^/, '').replace(/[^A-Za-z0-9-]/g, '-');
+  }
 
   /* v4.2：笔记的「标题」口径 = 正文第一行，剥掉 Markdown 记号后截 60 字。
      补全候选、跳转对账、反链上下文三处共用，必须同一个函数。 */
@@ -123,7 +141,11 @@ const WikiLink = (function () {
     return out;
   }
 
-  return { RE, parseLinks, distinctTargets, linkContexts, normalize, stripCode, splitTarget, bookOf, noteTitle, noteAnchorTitle };
+  return {
+    RE, parseLinks, distinctTargets, linkContexts, normalize, stripCode,
+    splitTarget, bookOf, anchorTarget, safeAnchor,
+    noteTitle, noteAnchorTitle
+  };
 })();
 
 try { window.WikiLink = WikiLink; } catch (e) { /* vm 沙箱里没有 window */ }

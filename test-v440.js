@@ -30,7 +30,8 @@ ok(/function quoteCallout\(text, title\) \{/.test(PJ), 'quoteCallout 辅助函�
 ok(/'> \[!quote\]- ' \+ String\(title \|\| '原文'\)/.test(PJ),
   'callout 头格式 > [!quote]- 标题（带折叠 - 标记）');
 ok(/\.map\(\(l\) => '> ' \+ l\)/.test(PJ), '原文每行都以 > 起头（合法 callout 体）');
-ok(/quoteCallout\(a\.text, label \|\| '原文'\)/.test(PJ),
+/* v4.5.0：标题统一成「原文 · 类型 · 颜色」，无标签时仍是「原文」 */
+ok(/quoteCallout\(a\.text, '原文' \+ \(label \? ' · ' \+ label : ''\)\)/.test(PJ),
   '摘录原文走 callout，标题带类型·颜色标签（高亮·蓝 等）');
 ok(/quoteCallout\(n\.quote, '原文'\)/.test(PJ), '笔记引用原文走 callout');
 ok(!/function quoteBlock\(/.test(PJ), '旧 quoteBlock 已移除（无死代码）');

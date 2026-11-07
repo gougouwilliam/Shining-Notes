@@ -132,6 +132,12 @@ const FEATURES = [
   { g: 'J. 知识库同步', n: 'v4.4.2 Eagle 已删条目对账：孤儿识别 + 备份回收 + 墓碑防复活', c: [['js/projection.js', 'function orphanCandidates('], ['js/projection.js', 'function pruneOrphans('], ['js/projection.js', 'isTombstoned(id)']], t: 'orphanCandidates' },
   { g: 'J. 知识库同步', n: 'v4.4.2 删除对账自动/手动入口（全库 API 复核 + 工作台按钮）', c: [['js/app.js', 'async function reconcileDeleted('], ['js/app.js', "on('#btnWbPruneOrphans'"], ['index.html', 'id="btnWbPruneOrphans"']], t: 'reconcileDeleted' },
 
+  /* ── J. v4.5.0 OB 绝对同步 / 精确双链 / 排版 ── */
+  { g: 'J. 知识库同步', n: 'v4.5.0 OB 块锚点：每条摘录/笔记唯一稳定 ^eaglenote-*，[[书#^ID|显示名]] 精确落到那一条', c: [['js/projection.js', 'function blkId('], ['js/wikilink.js', "rest.charAt(0) === '^'"], ['js/editor.js', 'function wikiVal('], ['js/app.js', 'Projection.titleByAnchor(']], t: 'blkId' },
+  { g: 'J. 知识库同步', n: 'v4.5.0 绝对同步：插件增/删/改即时投影，正文指纹判重不空转重写、不刷新 OB', c: [['js/projection.js', 'bodyKey: U.hashKey'], ['js/projection.js', 'prev.bodyKey === out.bodyKey'], ['js/projection.js', 'proj.write']], t: 'bodyKey' },
+  { g: 'J. 知识库同步', n: 'v4.5.0 OB 手改只吸收不重写 + 3s 回读 + 启动全量对账 + 退出三处 flush', c: [['js/projection.js', 'rec.hash = curHash'], ['js/app.js', 'startProjSync._rebuildKick'], ['js/app.js', 'Projection.flush()']], t: 'syncExternal' },
+  { g: 'J. 知识库同步', n: 'v4.5.0 OB 排版：折叠说明 / 编号标题 / 批注 callout / 正文标题转义 / 图片限宽', c: [['js/projection.js', '> [!info]- 关于这篇笔记'], ['js/projection.js', 'function noteCallout('], ['js/projection.js', 'function escapeHeadings('], ['js/projection.js', '|420](']], t: 'noteCallout' },
+
   /* ── I. 窗口与退出 ── */
   { g: 'I. 窗口与退出', n: 'ESC 逐级退出（v4.4.0 起最后一级=关闭插件，决策点唯一）', c: [['js/esc.js', 'Esc'], ['js/escguard.js', "'exit-plugin'"]], t: 'Esc' },
   { g: 'I. 窗口与退出', n: 'ESC 一律吞掉，不漏给 Eagle', c: [['js/app.js', 'stopPropagation()']], t: 'Esc' },
@@ -297,6 +303,9 @@ lines.push('');
 
 /* ── 人工实测清单：这些只能点出来，静态核对证明不了 ── */
 const MANUAL = [
+  ['v4.5.0 OB 双链精确落点', '重启 Eagle → 打开有多条摘录/笔记的文档 → 用 [[ 引用一条「摘录下的批注」→ 到 OB 里点这个链接', 'OB 直接滚到那一条批注并高亮，不是只打开整篇 md；链接显示可读别名而不是 ^ID'],
+  ['v4.5.0 插件增删改 → OB 即时同步', '插件里新建一条笔记 / 改一段批注 / 删一条摘录，各等 1 秒后切到 OB 看', '对应块立刻出现 / 更新 / 消失，区块计数和 frontmatter 的 synced 同步变化'],
+  ['v4.5.0 OB 手改不被打断', '在 OB 里打开一篇 md，改一段批注文字并保持编辑 5 秒以上', '文字不被插件重写冲掉；插件右栏随后显示改后的文字，debug.log 有 proj.absorb'],
   ['AI 总结全文（本地）', '打开一篇 PDF → 点顶栏「AI 总结」→ 总结全文（本地模型）', '弹窗流式出总结；总结完可追问；悬停 AI 消息点「加入笔记」/ 选中文字点浮标，笔记列表出现对应条目'],
   ['AI 总结（自定义接口，可选）', '⚙ 填 baseURL + Key（推荐智谱 GLM-4-Flash 免费档）→ 切到自定义接口 → 总结', '流式总结按 Markdown 渲染；失败自动兜底到本地模型且原因可见'],
   ['知识库真的在资源管理器里', '打开 E:\\Notes Collection from Eagle', '每个资料库一个文件夹，每篇文档一份「书名.md」，assets 里有摘录图'],
@@ -324,7 +333,7 @@ MANUAL.forEach((m, i) => {
   lines.push('| ' + (i + 1) + ' | ' + m[0] + ' | ' + m[1] + ' | ' + m[2] + ' |');
 });
 lines.push('');
-lines.push('> 其中 1～7 是本轮改动或上次报错的直接相关项，优先验。');
+lines.push('> 其中 1～3 是 v4.5.0 本轮改动（OB 绝对同步 / 精确双链 / 排版），优先验；4～10 是历史直接相关项。');
 lines.push('');
 
 fs.writeFileSync(path.join(ROOT, 'FEATURES.md'), lines.join('\n'), 'utf8');

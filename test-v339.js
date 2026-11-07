@@ -142,7 +142,8 @@ const mdOf = (id) => path.join(rootDir, 'Doc ' + id + '.md');
   const t3 = fs.readFileSync(mdOf('IT3'), 'utf8');
   ok(/## 摘录/.test(t3) && /> 高亮文本/.test(t3), '摘录投影正确');
   ok(/<!-- eagle:ec:IT3 -->/.test(t3), 'Eagle 注释区块存在（锚点用条目 id）');
-  ok(/## Eagle 注释（双向同步）/.test(t3), '注释区块标题存在');
+  /* v4.5.0：标题前加「附 ·」，明确它是回写通道而不是正文 */
+  ok(/## 附 · Eagle 注释（双向同步）/.test(t3), '注释区块标题存在');
 
   /* ===== 3. Eagle 注释 → md 投影 ===== */
   console.log('\n— Eagle 注释投影 —');
